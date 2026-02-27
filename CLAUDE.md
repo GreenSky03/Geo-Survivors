@@ -88,11 +88,13 @@ index.html               # HTML + CSS (UI 오버레이)
 - **사망 슬로모션**, 원격 사망 알림 (파티클+킬로그), 파티클 오브젝트 풀링
 - **멀티 데미지 보고**: ChainLightning/beam `pendingHits[]` → `getHits()` 반환
 - **배포**: Render.com, HTTP+WS 통합, env 설정, exponential backoff 재연결
-- **채팅**: Enter로 열기/전송+닫기, Escape로 취소, 채팅 중 이동 차단, 모바일 토글 버튼
+- **채팅**: Enter로 열기/전송+닫기, Escape로 취소, 채팅 중 이동 차단
+  - 모바일: 전송 버튼(➤) + 토글 버튼(💬↔✕), `enterkeyhint="send"`
+  - PC: `chatJustClosed` 플래그로 Enter 전송 후 재열림 방지
   - 메시지 최대 100자, 화면 최대 10개, 8초 페이드 → 15초 제거
   - `NetworkManager.sendChat()` → 서버 브로드캐스트 → `UI.addChatMessage()` (HTML escape)
   - `Input.movementBlocked` 플래그로 채팅 중 이동 차단
-- **핑**: G키, 같은 팀만 표시 (다른 팀 핑은 무시)
+- **핑**: G키 + 모바일 핑 버튼(📍), 같은 팀만 표시 (다른 팀 핑은 무시)
 - **ForceField**: knockback/slow는 솔로 전용 (`serverId < 0` 가드), 멀티에서는 데미지 틱만
 - **모바일 반응형 UI**: `@media 768px` (태블릿), `@media 480px` (모바일) — 레벨업 세로 스택, HUD/미니맵/채팅 축소
 
