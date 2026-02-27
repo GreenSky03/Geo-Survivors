@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Geo Survivors</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
+    canvas { display: block; }
+
+    #ui-layer {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; font-family: 'Segoe UI', Arial, sans-serif;
+      color: #fff;
+    }
+
+    #hud {
+      position: absolute; top: 16px; left: 20px;
+    }
+    #hud .bar-container {
+      width: 260px; height: 14px; background: rgba(255,255,255,0.08);
+      border-radius: 7px; margin-bottom: 6px; overflow: hidden;
+    }
+    #hud .bar-fill {
+      height: 100%; border-radius: 7px; transition: width 0.2s;
+    }
+    #hp-fill { background: linear-gradient(90deg, #ff4466, #ff6688); width: 100%; }
+    #xp-fill { background: linear-gradient(90deg, #44aaff, #66ccff); width: 0%; }
+    #hud .stats {
+      display: flex; gap: 16px; font-size: 13px; opacity: 0.85; margin-top: 4px;
+    }
+
+    #boss-warning {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 42px; font-weight: bold; color: #ff2244;
+      text-shadow: 0 0 30px #ff2244, 0 0 60px #ff2244;
+      display: none; animation: pulse 0.5s infinite alternate;
+    }
+    @keyframes pulse { from { opacity: 0.6; } to { opacity: 1; } }
+
+    #level-up-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(5, 5, 20, 0.85); display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto;
+    }
+    #level-up-screen h2 {
+      font-size: 28px; color: #44ffaa; margin-bottom: 24px;
+      text-shadow: 0 0 20px #44ffaa;
+    }
+    #level-up-choices {
+      display: flex; gap: 16px;
+    }
+    .level-up-card {
+      width: 200px; padding: 20px; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 12px;
+      cursor: pointer; text-align: center; transition: all 0.15s;
+    }
+    .level-up-card:hover {
+      background: rgba(68, 255, 170, 0.1); border-color: #44ffaa;
+      transform: translateY(-4px);
+    }
+    .level-up-card .card-icon { font-size: 32px; margin-bottom: 8px; }
+    .level-up-card .card-name { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
+    .level-up-card .card-desc { font-size: 12px; opacity: 0.7; }
+    .level-up-card .card-stat {
+      font-size: 12px; margin-top: 8px; padding: 4px 8px;
+      background: rgba(68,255,170,0.08); border-radius: 4px;
+      color: #44ffaa; font-weight: bold;
+    }
+    .level-up-card.evolve-card { border-color: rgba(255,200,50,0.4); }
+    .level-up-card.evolve-card:hover {
+      border-color: #ffcc33; background: rgba(255,200,50,0.08);
+    }
+    .level-up-card.evolve-card .card-stat { color: #ffcc33; background: rgba(255,200,50,0.1); }
+
+    #pause-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(5, 5, 20, 0.8); display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto; z-index: 50;
+    }
+    #pause-screen h2 {
+      font-size: 32px; color: #fff; margin-bottom: 24px;
+      text-shadow: 0 0 20px rgba(255,255,255,0.3);
+    }
+    .pause-row { margin: 8px 0; display: flex; align-items: center; gap: 12px; }
+    .pause-label { font-size: 14px; opacity: 0.7; width: 60px; }
+    #volume-slider {
+      -webkit-appearance: none; width: 160px; height: 4px;
+      background: rgba(255,255,255,0.2); border-radius: 2px; outline: none;
+    }
+    #volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      background: #44ffaa; border-radius: 50%; cursor: pointer;
+    }
+    .pause-btn {
+      padding: 10px 32px; font-size: 16px; background: transparent;
+      border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 6px;
+      cursor: pointer; transition: all 0.15s; margin-top: 8px;
+    }
+    .pause-btn:hover { border-color: #44ffaa; color: #44ffaa; }
+
+    #minimap {
+      position: absolute; bottom: 20px; right: 20px;
+      width: 140px; height: 140px;
+      background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+    }
+
+    #highscore {
+      position: absolute; top: 16px; right: 20px;
+      font-size: 12px; opacity: 0.5;
+    }
+
+    #team-scoreboard {
+      position: absolute; top: 40px; right: 20px;
+      font-size: 11px; display: none;
+    }
+    .team-row { display: flex; gap: 8px; margin: 3px 0; align-items: center; }
+    .team-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .team-kills { opacity: 0.7; min-width: 50px; }
+    .team-name { min-width: 40px; }
+
+    #leaderboard-panel {
+      position: absolute; top: 130px; right: 20px;
+      font-size: 11px; display: none; max-width: 160px;
+    }
+    #leaderboard-panel h4 { margin-bottom: 4px; opacity: 0.5; font-size: 10px; }
+    .lb-row { display: flex; gap: 6px; margin: 2px 0; opacity: 0.6; }
+    .lb-rank { width: 14px; text-align: right; }
+    .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    #connection-status {
+      position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; opacity: 0.4; display: none;
+    }
+
+    #ping-display {
+      position: absolute; bottom: 6px; right: 170px;
+      font-size: 10px; opacity: 0.35; display: none;
+      font-family: monospace;
+    }
+
+    #kill-log {
+      position: absolute; bottom: 170px; right: 20px;
+      font-size: 11px; display: none; max-width: 200px;
+      pointer-events: none;
+    }
+    .kill-log-entry {
+      margin: 2px 0; opacity: 0.6; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+      animation: fadeIn 0.2s;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 0.6; } }
+
+    #ping-hint {
+      position: absolute; bottom: 170px; left: 20px;
+      font-size: 10px; opacity: 0.25; display: none;
+    }
+
+    #respawn-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(5, 0, 0, 0.75); display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      z-index: 40; pointer-events: none;
+    }
+    #respawn-overlay .death-title {
+      font-size: 52px; font-weight: bold; color: #ff2244;
+      text-shadow: 0 0 40px #ff2244, 0 0 80px rgba(255,34,68,0.4);
+      letter-spacing: 8px; margin-bottom: 24px;
+      animation: deathPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes deathPulse { 0%,100%{ opacity:0.7; } 50%{ opacity:1; } }
+    #respawn-overlay .respawn-timer {
+      font-size: 22px; color: rgba(255,255,255,0.8); margin-bottom: 20px;
+    }
+    #respawn-overlay .respawn-bar-outer {
+      width: 300px; height: 6px; background: rgba(255,255,255,0.1);
+      border-radius: 3px; overflow: hidden;
+    }
+    #respawn-overlay .respawn-bar-inner {
+      height: 100%; width: 0%; background: linear-gradient(90deg, #ff4466, #44ffaa);
+      border-radius: 3px; transition: width 0.25s linear;
+    }
+    #respawn-overlay .death-hint {
+      margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.3);
+    }
+
+    #room-info {
+      position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; opacity: 0.35; display: none;
+    }
+
+    #name-input {
+      padding: 10px 20px; font-size: 16px; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px;
+      text-align: center; outline: none; margin-bottom: 16px; width: 220px;
+    }
+    #name-input:focus { border-color: #00e6b0; }
+    #name-input::placeholder { color: rgba(255,255,255,0.3); }
+
+    .title-mode-btns { display: flex; gap: 10px; margin-bottom: 16px; }
+    .mode-btn {
+      padding: 10px 24px; font-size: 14px; background: transparent;
+      border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.7);
+      border-radius: 6px; cursor: pointer; transition: all 0.15s;
+    }
+    .mode-btn:hover { border-color: rgba(255,255,255,0.5); color: #fff; }
+    .mode-btn.active { border-color: #00e6b0; color: #00e6b0; }
+
+    #boss-hp-bar {
+      position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+      width: 400px; display: none;
+    }
+    #boss-hp-bar .bar-container { height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; }
+    #boss-hp-fill { height: 100%; background: linear-gradient(90deg, #ff2244, #ff8800); border-radius: 5px; width: 100%; transition: width 0.2s; }
+    #boss-hp-label { font-size: 11px; text-align: center; margin-top: 3px; opacity: 0.6; }
+
+    #game-over-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(5, 5, 20, 0.9); display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto;
+    }
+    #game-over-screen h2 {
+      font-size: 36px; color: #ff4466; margin-bottom: 10px;
+      text-shadow: 0 0 20px #ff4466;
+    }
+    #game-over-stats { font-size: 16px; opacity: 0.8; margin-bottom: 24px; text-align: center; line-height: 1.8; }
+    #restart-btn {
+      padding: 12px 36px; font-size: 18px; background: transparent;
+      border: 2px solid #44ffaa; color: #44ffaa; border-radius: 8px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    #restart-btn:hover { background: rgba(68,255,170,0.15); }
+
+    #title-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, rgba(10,15,40,0.95) 0%, rgba(5,5,15,0.98) 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto; z-index: 100;
+    }
+    #title-screen h1 {
+      font-size: 64px; font-weight: bold; color: #00e6b0;
+      text-shadow: 0 0 40px rgba(0,230,176,0.5), 0 0 80px rgba(0,230,176,0.2);
+      margin-bottom: 8px; letter-spacing: 6px;
+    }
+    #title-screen .subtitle {
+      font-size: 16px; color: rgba(255,255,255,0.4); margin-bottom: 48px; letter-spacing: 3px;
+    }
+    #start-btn {
+      padding: 14px 48px; font-size: 20px; background: transparent;
+      border: 2px solid #00e6b0; color: #00e6b0; border-radius: 8px;
+      cursor: pointer; transition: all 0.2s; letter-spacing: 2px;
+    }
+    #start-btn:hover {
+      background: rgba(0,230,176,0.12); transform: scale(1.05);
+      box-shadow: 0 0 30px rgba(0,230,176,0.2);
+    }
+    #title-screen .controls-hint {
+      margin-top: 32px; font-size: 13px; color: rgba(255,255,255,0.3);
+    }
+
+    #weapon-hud {
+      position: absolute; bottom: 20px; left: 20px;
+      display: flex; gap: 8px;
+    }
+    .weapon-icon {
+      width: 40px; height: 40px; background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; position: relative;
+    }
+    .weapon-icon .weapon-level {
+      position: absolute; bottom: -2px; right: -2px; font-size: 9px;
+      background: rgba(0,0,0,0.7); padding: 0 3px; border-radius: 3px;
+      color: #44ffaa;
+    }
+  </style>
+</head>
+<body>
+  <div id="damage-flash" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,40,40,0.3);pointer-events:none;opacity:0;z-index:999;transition:opacity 0.15s;"></div>
+  <div id="ui-layer">
+    <div id="title-screen">
+      <h1>GEO SURVIVORS</h1>
+      <div class="subtitle">ABSTRACT GEOMETRIC SURVIVAL</div>
+      <input type="text" id="name-input" placeholder="Enter your name" maxlength="16" />
+      <div class="title-mode-btns">
+        <button class="mode-btn active" id="mode-solo">SOLO</button>
+        <button class="mode-btn" id="mode-multi">MULTIPLAYER</button>
+      </div>
+      <button id="start-btn">START</button>
+      <div class="controls-hint" id="controls-hint">WASD or Arrow Keys to move · ESC to pause</div>
+      <div style="margin-top:20px; display:flex; gap:8px;">
+        <button class="lang-btn" data-lang="en" style="padding:6px 16px; background:transparent; border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:4px; cursor:pointer; font-size:13px;">EN</button>
+        <button class="lang-btn" data-lang="ko" style="padding:6px 16px; background:transparent; border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:4px; cursor:pointer; font-size:13px;">한국어</button>
+      </div>
+    </div>
+    <div id="hud" style="display:none;">
+      <div class="bar-container"><div id="hp-fill" class="bar-fill"></div></div>
+      <div class="bar-container"><div id="xp-fill" class="bar-fill"></div></div>
+      <div class="stats">
+        <span id="level-text">LV 1</span>
+        <span id="time-text">00:00</span>
+        <span id="kill-text">KILLS: 0</span>
+      </div>
+    </div>
+    <div id="weapon-hud"></div>
+    <div id="highscore">BEST: 00:00</div>
+    <div id="room-info"></div>
+    <div id="team-scoreboard"></div>
+    <div id="leaderboard-panel"><h4>LEADERBOARD</h4><div id="lb-list"></div></div>
+    <div id="connection-status"></div>
+    <div id="ping-display"></div>
+    <div id="kill-log"></div>
+    <div id="ping-hint">Press G to ping</div>
+    <div id="boss-hp-bar">
+      <div class="bar-container"><div id="boss-hp-fill"></div></div>
+      <div id="boss-hp-label">BOSS</div>
+    </div>
+    <canvas id="minimap"></canvas>
+    <div id="pause-screen">
+      <h2 id="pause-title">PAUSED</h2>
+      <div class="pause-row">
+        <span class="pause-label" id="volume-label">Volume</span>
+        <input type="range" id="volume-slider" min="0" max="100" value="30">
+      </div>
+      <button class="pause-btn" id="resume-btn">RESUME</button>
+      <button class="pause-btn" id="quit-btn">QUIT TO TITLE</button>
+    </div>
+    <div id="respawn-overlay">
+      <div class="death-title">ELIMINATED</div>
+      <div class="death-penalty" id="death-penalty-text" style="font-size:16px;color:#ff8844;margin-bottom:12px;text-shadow:0 0 10px rgba(255,136,68,0.5);letter-spacing:2px;">ALL PROGRESS LOST</div>
+      <div class="respawn-timer" id="respawn-timer-text">Respawning in 5...</div>
+      <div class="respawn-bar-outer"><div class="respawn-bar-inner" id="respawn-bar-fill"></div></div>
+      <div class="death-hint">You will respawn at a safe location</div>
+    </div>
+    <div id="boss-warning">⚠ BOSS INCOMING ⚠</div>
+    <div id="level-up-screen">
+      <h2>LEVEL UP</h2>
+      <div id="level-up-choices"></div>
+    </div>
+    <div id="game-over-screen">
+      <h2>GAME OVER</h2>
+      <div id="game-over-stats"></div>
+      <button id="restart-btn">RESTART</button>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

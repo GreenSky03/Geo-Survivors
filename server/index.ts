@@ -1,0 +1,909 @@
+import { WebSocketServer, WebSocket } from 'ws';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import type {
+  C2S_Message, S2C_Message, S2C_Welcome, PlayerData, BossData,
+  Team, ServerEnemy, S2C_PlayersSync, S2C_EnemiesSync,
+  S2C_EnemySpawn, S2C_EnemyDeath,
+  S2C_BossSpawn, S2C_BossUpdate, S2C_BossDead,
+  S2C_TeamScores, S2C_Leaderboard, S2C_PvpDamage,
+  S2C_PingSignal, S2C_WaveEvent, WeaponSyncData,
+} from '../shared/protocol';
+import { TEAMS, MAP_HALF_W, MAP_HALF_H } from '../shared/protocol';
+
+const PORT = Number(process.env.PORT) || 8080;
+const MAX_PLAYERS_PER_ROOM = 30;
+const BOSS_INTERVAL_S = 120;
+const TICK_MS = 50;
+const TICK_S = TICK_MS / 1000;
+const PLAYER_SYNC_MS = 100;
+const ENEMY_SYNC_MS = 200;
+const SCOREBOARD_MS = 2000;
+const MAX_ENEMIES = 120;
+
+// Wave event interval (seconds)
+const WAVE_EVENT_INTERVAL = 60;
+// Elite spawn chance (per spawn cycle)
+const ELITE_CHANCE = 0.08;
+
+// ─── Enemy Definitions (mirrored from client) ──
+interface EnemyDef {
+  type: string;
+  hp: number;
+  speed: number;
+  damage: number;
+  xp: number;
+  radius: number;
+  shape: string;
+}
+
+const ENEMY_DEFS: Record<string, EnemyDef> = {
+  triangle:  { type: 'triangle', hp: 15, speed: 80, damage: 8, xp: 2, radius: 10, shape: 'triangle' },
+  diamond:   { type: 'diamond', hp: 30, speed: 60, damage: 12, xp: 4, radius: 12, shape: 'diamond' },
+  square:    { type: 'square', hp: 50, speed: 50, damage: 15, xp: 6, radius: 14, shape: 'square' },
+  pentagon:  { type: 'pentagon', hp: 80, speed: 40, damage: 20, xp: 10, radius: 16, shape: 'pentagon' },
+  charger:   { type: 'charger', hp: 25, speed: 50, damage: 20, xp: 5, radius: 11, shape: 'triangle' },
+  splitter:  { type: 'splitter', hp: 40, speed: 55, damage: 10, xp: 4, radius: 14, shape: 'square' },
+};
+
+// ─── Server Enemy ───────────────────────────
+interface RoomEnemy {
+  id: number;
+  type: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  baseSpeed: number;
+  xp: number;
+  isBoss: boolean;
+  isElite: boolean;
+  dead: boolean;
+  // Charger state
+  chargeTimer: number;
+  chargeVx: number;
+  chargeVy: number;
+  isCharging: boolean;
+  // Current velocity (for dead reckoning on client)
+  vx: number;
+  vy: number;
+  // Targeting mode: 'nearest' | 'centroid' | 'weakest'
+  targetMode: string;
+  // Collision cooldowns per player (playerId → remaining seconds)
+  damageCooldowns: Map<string, number>;
+}
+
+// ─── Room ───────────────────────────────────
+interface ServerPlayer {
+  ws: WebSocket;
+  data: PlayerData;
+  lastUpdate: number;
+}
+
+interface Room {
+  code: string;
+  players: Map<string, ServerPlayer>;
+  enemies: Map<number, RoomEnemy>;
+  nextEnemyId: number;
+  boss: BossData;
+  bossEnemyId: number;
+  serverTime: number;
+  nextBossTime: number;
+  bossIndex: number;
+  teamKills: Record<Team, number>;
+  spawnTimer: number;
+  tickAccum: number;
+  playerSyncAccum: number;
+  enemySyncAccum: number;
+  scoreAccum: number;
+  // Wave event
+  nextWaveEventTime: number;
+  waveEventCount: number;
+}
+
+const rooms = new Map<string, Room>();
+
+function generateId(): string {
+  return Math.random().toString(36).substring(2, 10);
+}
+
+function generateRoomCode(): string {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function getSmallestTeam(room: Room): Team {
+  const counts: Record<Team, number> = { blue: 0, red: 0, green: 0, yellow: 0 };
+  for (const p of room.players.values()) counts[p.data.team]++;
+  let min = Infinity;
+  let team: Team = 'blue';
+  for (const t of TEAMS) {
+    if (counts[t] < min) { min = counts[t]; team = t; }
+  }
+  return team;
+}
+
+function clampToMap(x: number, y: number): { x: number; y: number } {
+  return {
+    x: Math.max(-MAP_HALF_W, Math.min(MAP_HALF_W, x)),
+    y: Math.max(-MAP_HALF_H, Math.min(MAP_HALF_H, y)),
+  };
+}
+
+function findOrCreateRoom(preferCode?: string): Room {
+  if (preferCode) {
+    const room = rooms.get(preferCode);
+    if (room && room.players.size < MAX_PLAYERS_PER_ROOM) return room;
+  }
+  for (const room of rooms.values()) {
+    if (room.players.size < MAX_PLAYERS_PER_ROOM) return room;
+  }
+  const code = generateRoomCode();
+  const room: Room = {
+    code,
+    players: new Map(),
+    enemies: new Map(),
+    nextEnemyId: 1,
+    boss: { active: false, hp: 0, maxHp: 0, x: 0, y: 0, index: 0, teamDamage: { blue: 0, red: 0, green: 0, yellow: 0 } },
+    bossEnemyId: -1,
+    serverTime: 0,
+    nextBossTime: BOSS_INTERVAL_S,
+    bossIndex: 0,
+    teamKills: { blue: 0, red: 0, green: 0, yellow: 0 },
+    spawnTimer: 0,
+    tickAccum: 0,
+    playerSyncAccum: 0,
+    enemySyncAccum: 0,
+    scoreAccum: 0,
+    nextWaveEventTime: WAVE_EVENT_INTERVAL,
+    waveEventCount: 0,
+  };
+  rooms.set(code, room);
+  console.log(`Room created: ${code}`);
+  return room;
+}
+
+function broadcast(room: Room, msg: S2C_Message, exclude?: string): void {
+  const data = JSON.stringify(msg);
+  for (const p of room.players.values()) {
+    if (p.data.id !== exclude && p.ws.readyState === WebSocket.OPEN) {
+      p.ws.send(data);
+    }
+  }
+}
+
+function send(ws: WebSocket, msg: S2C_Message): void {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+// ─── Centroid calculation ───────────────────
+function getPlayerCentroid(room: Room): { x: number; y: number } | null {
+  const alive = Array.from(room.players.values()).filter(p => p.data.alive);
+  if (alive.length === 0) return null;
+  let sx = 0, sy = 0;
+  for (const p of alive) { sx += p.data.x; sy += p.data.y; }
+  return { x: sx / alive.length, y: sy / alive.length };
+}
+
+// ─── Enemy Spawning ─────────────────────────
+function pickEnemyType(time: number): string {
+  if (time > 300) {
+    const r = Math.random();
+    if (r < 0.08) return 'pentagon';
+    if (r < 0.18) return 'charger';
+    if (r < 0.30) return 'splitter';
+    if (r < 0.50) return 'square';
+    if (r < 0.75) return 'diamond';
+  } else if (time > 180) {
+    const r = Math.random();
+    if (r < 0.10) return 'charger';
+    if (r < 0.20) return 'splitter';
+    if (r < 0.35) return 'square';
+    if (r < 0.55) return 'diamond';
+  } else if (time > 90) {
+    const r = Math.random();
+    if (r < 0.08) return 'charger';
+    if (r < 0.15) return 'splitter';
+    if (r < 0.30) return 'diamond';
+  } else if (time > 45) {
+    if (Math.random() < 0.25) return 'diamond';
+  }
+  return 'triangle';
+}
+
+function createRoomEnemy(
+  room: Room, typeKey: string, x: number, y: number,
+  opts: { isElite?: boolean; isBoss?: boolean; hpOverride?: number; speedOverride?: number; xpOverride?: number } = {},
+): RoomEnemy {
+  const mins = room.serverTime / 60;
+  const difficulty = 1 + mins * 0.4 + Math.pow(mins / 10, 1.5);
+  const def = ENEMY_DEFS[typeKey] || ENEMY_DEFS.triangle;
+  const eliteMult = opts.isElite ? 3 : 1;
+  const hp = opts.hpOverride ?? Math.floor(def.hp * difficulty * (1 + room.players.size * 0.15) * eliteMult);
+  const speed = opts.speedOverride ?? def.speed;
+  const xp = opts.xpOverride ?? Math.floor(def.xp * eliteMult);
+  const id = room.nextEnemyId++;
+
+  // Assign targeting mode: 70% nearest, 15% centroid, 15% weakest
+  const r = Math.random();
+  const targetMode = r < 0.70 ? 'nearest' : r < 0.85 ? 'centroid' : 'weakest';
+
+  const pos = clampToMap(x, y);
+
+  return {
+    id, type: typeKey,
+    x: pos.x, y: pos.y, hp, maxHp: hp,
+    speed, baseSpeed: speed, xp,
+    isBoss: opts.isBoss ?? false,
+    isElite: opts.isElite ?? false,
+    dead: false,
+    chargeTimer: 2 + Math.random(), chargeVx: 0, chargeVy: 0, isCharging: false,
+    vx: 0, vy: 0,
+    targetMode,
+    damageCooldowns: new Map(),
+  };
+}
+
+function spawnEnemy(room: Room): void {
+  const centroid = getPlayerCentroid(room);
+  if (!centroid) return;
+
+  const alive = Array.from(room.players.values()).filter(p => p.data.alive);
+
+  // Centroid-based spawn: 60% near centroid, 40% near random player
+  let spawnX: number, spawnY: number;
+  if (alive.length > 1 && Math.random() < 0.6) {
+    // Spawn near centroid
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 400 + Math.random() * 200;
+    spawnX = centroid.x + Math.cos(angle) * dist;
+    spawnY = centroid.y + Math.sin(angle) * dist;
+  } else {
+    // Spawn near a random player
+    const p = alive[Math.floor(Math.random() * alive.length)];
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 550 + Math.random() * 150;
+    spawnX = p.data.x + Math.cos(angle) * dist;
+    spawnY = p.data.y + Math.sin(angle) * dist;
+  }
+
+  const typeKey = pickEnemyType(room.serverTime);
+  const isElite = Math.random() < ELITE_CHANCE && room.serverTime > 60;
+
+  const enemy = createRoomEnemy(room, typeKey, spawnX, spawnY, { isElite });
+  room.enemies.set(enemy.id, enemy);
+
+  const spawnMsg: S2C_EnemySpawn = {
+    type: 'enemy_spawn',
+    enemy: {
+      id: enemy.id, type: typeKey,
+      x: enemy.x, y: enemy.y, hp: enemy.hp, maxHp: enemy.maxHp,
+      isBoss: false, isElite: enemy.isElite,
+    },
+  };
+  broadcast(room, spawnMsg);
+}
+
+function spawnWaveEnemies(room: Room): void {
+  const centroid = getPlayerCentroid(room);
+  if (!centroid) return;
+
+  room.waveEventCount++;
+  const waveSize = Math.floor(8 + room.waveEventCount * 3 + room.players.size * 2);
+  const actualCount = Math.min(waveSize, MAX_ENEMIES - room.enemies.size);
+
+  // Spawn enemies in a ring around centroid
+  for (let i = 0; i < actualCount; i++) {
+    const angle = (Math.PI * 2 / actualCount) * i + Math.random() * 0.3;
+    const dist = 500 + Math.random() * 200;
+    const x = centroid.x + Math.cos(angle) * dist;
+    const y = centroid.y + Math.sin(angle) * dist;
+
+    const typeKey = pickEnemyType(room.serverTime);
+    const enemy = createRoomEnemy(room, typeKey, x, y);
+    // Wave enemies all target centroid initially
+    enemy.targetMode = 'centroid';
+    room.enemies.set(enemy.id, enemy);
+
+    broadcast(room, {
+      type: 'enemy_spawn',
+      enemy: {
+        id: enemy.id, type: typeKey,
+        x: enemy.x, y: enemy.y, hp: enemy.hp, maxHp: enemy.maxHp,
+        isBoss: false, isElite: false,
+      },
+    } as S2C_EnemySpawn);
+  }
+
+  // Broadcast wave event to clients
+  const waveMsg: S2C_WaveEvent = {
+    type: 'wave_event',
+    waveNumber: room.waveEventCount,
+    enemyCount: actualCount,
+  };
+  broadcast(room, waveMsg);
+  console.log(`[${room.code}] Wave #${room.waveEventCount}: ${actualCount} enemies`);
+}
+
+function spawnBoss(room: Room): void {
+  const centroid = getPlayerCentroid(room);
+  if (!centroid) return;
+
+  const mult = 1 + room.bossIndex * 0.8;
+  const hp = Math.floor(800 * mult * Math.max(1, room.players.size * 0.5));
+  const angle = Math.random() * Math.PI * 2;
+  const bx = centroid.x + Math.cos(angle) * 500;
+  const by = centroid.y + Math.sin(angle) * 500;
+
+  const enemy = createRoomEnemy(room, 'pentagon', bx, by, {
+    isBoss: true, hpOverride: hp, speedOverride: 35, xpOverride: 30 + room.bossIndex * 10,
+  });
+  room.enemies.set(enemy.id, enemy);
+
+  room.boss = {
+    active: true, hp, maxHp: hp,
+    x: enemy.x, y: enemy.y, index: room.bossIndex,
+    teamDamage: { blue: 0, red: 0, green: 0, yellow: 0 },
+  };
+  room.bossEnemyId = enemy.id;
+  room.bossIndex++;
+  room.nextBossTime += BOSS_INTERVAL_S;
+
+  const msg: S2C_BossSpawn = {
+    type: 'boss_spawn',
+    boss: room.boss,
+    enemy: { id: enemy.id, type: 'pentagon', x: enemy.x, y: enemy.y, hp, maxHp: hp, isBoss: true },
+  };
+  broadcast(room, msg);
+  console.log(`[${room.code}] Boss #${room.bossIndex - 1} spawned (${hp} HP)`);
+}
+
+// ─── Enemy Movement (server-side) ───────────
+function updateEnemies(room: Room): void {
+  const players = Array.from(room.players.values()).filter(p => p.data.alive);
+  if (players.length === 0) return;
+
+  const centroid = getPlayerCentroid(room);
+
+  for (const enemy of room.enemies.values()) {
+    if (enemy.dead) continue;
+
+    // Find target based on targeting mode
+    let targetX = 0, targetY = 0;
+
+    if (enemy.targetMode === 'centroid' && centroid) {
+      // Move toward centroid (between players)
+      targetX = centroid.x;
+      targetY = centroid.y;
+    } else if (enemy.targetMode === 'weakest') {
+      // Target lowest HP player
+      let minHp = Infinity;
+      for (const p of players) {
+        if (p.data.hp < minHp) {
+          minHp = p.data.hp;
+          targetX = p.data.x;
+          targetY = p.data.y;
+        }
+      }
+    } else {
+      // 'nearest' — default
+      let nearestDist = Infinity;
+      for (const p of players) {
+        const dx = p.data.x - enemy.x;
+        const dy = p.data.y - enemy.y;
+        const d = dx * dx + dy * dy;
+        if (d < nearestDist) {
+          nearestDist = d;
+          targetX = p.data.x;
+          targetY = p.data.y;
+        }
+      }
+    }
+
+    const dx = targetX - enemy.x;
+    const dy = targetY - enemy.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Charger behavior
+    if (enemy.type === 'charger') {
+      enemy.chargeTimer -= TICK_S;
+      if (enemy.isCharging) {
+        enemy.x += enemy.chargeVx * TICK_S;
+        enemy.y += enemy.chargeVy * TICK_S;
+        enemy.vx = enemy.chargeVx;
+        enemy.vy = enemy.chargeVy;
+        enemy.chargeVx *= 0.97;
+        enemy.chargeVy *= 0.97;
+        if (Math.abs(enemy.chargeVx) < 20) enemy.isCharging = false;
+      } else if (enemy.chargeTimer <= 0 && dist < 350) {
+        enemy.chargeTimer = 2.5 + Math.random();
+        enemy.isCharging = true;
+        const angle = Math.atan2(dy, dx);
+        enemy.chargeVx = Math.cos(angle) * 500;
+        enemy.chargeVy = Math.sin(angle) * 500;
+      } else if (dist > 1) {
+        const spd = enemy.speed * 0.6;
+        enemy.vx = (dx / dist) * spd;
+        enemy.vy = (dy / dist) * spd;
+        enemy.x += enemy.vx * TICK_S;
+        enemy.y += enemy.vy * TICK_S;
+      } else {
+        enemy.vx = 0;
+        enemy.vy = 0;
+      }
+    } else if (dist > 1) {
+      enemy.vx = (dx / dist) * enemy.speed;
+      enemy.vy = (dy / dist) * enemy.speed;
+      enemy.x += enemy.vx * TICK_S;
+      enemy.y += enemy.vy * TICK_S;
+    } else {
+      enemy.vx = 0;
+      enemy.vy = 0;
+    }
+
+    // Clamp enemy to map boundaries
+    const clamped = clampToMap(enemy.x, enemy.y);
+    enemy.x = clamped.x;
+    enemy.y = clamped.y;
+
+    // Restore speed if it was slowed (ForceField slow recovery)
+    if (enemy.speed < enemy.baseSpeed) {
+      enemy.speed = Math.min(enemy.baseSpeed, enemy.speed + enemy.baseSpeed * 0.02 * TICK_S);
+    }
+
+    // Update boss position in boss data
+    if (enemy.isBoss && room.boss.active) {
+      room.boss.x = enemy.x;
+      room.boss.y = enemy.y;
+    }
+
+    // Decay collision cooldowns
+    for (const [pid, cd] of enemy.damageCooldowns) {
+      const remaining = cd - TICK_S;
+      if (remaining <= 0) enemy.damageCooldowns.delete(pid);
+      else enemy.damageCooldowns.set(pid, remaining);
+    }
+
+    // Player collision damage (server-side) - with per-player cooldown
+    for (const p of players) {
+      if (!p.data.alive) continue;
+      if (enemy.damageCooldowns.has(p.data.id)) continue;
+
+      const pdx = p.data.x - enemy.x;
+      const pdy = p.data.y - enemy.y;
+      const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+      const def = ENEMY_DEFS[enemy.type];
+      const enemyRadius = enemy.isElite ? (def?.radius ?? 12) * 1.5 : (def?.radius ?? 12);
+      if (pdist < enemyRadius + 16) {
+        enemy.damageCooldowns.set(p.data.id, 0.8);
+        const baseDmg = def ? def.damage : 10;
+        const colMins = room.serverTime / 60;
+        const dmg = Math.floor(baseDmg * (1 + colMins * 0.3 + Math.pow(colMins / 10, 1.2)) * (enemy.isElite ? 1.5 : 1));
+        const pvpMsg: S2C_PvpDamage = {
+          type: 'pvp_damage',
+          fromId: `enemy_${enemy.id}`,
+          fromTeam: 'red',
+          damage: dmg,
+        };
+        send(p.ws, pvpMsg);
+      }
+    }
+  }
+}
+
+// ─── Sync helpers ───────────────────────────
+function buildEnemySyncData(room: Room): number[] {
+  const data: number[] = [];
+  for (const e of room.enemies.values()) {
+    if (e.dead) continue;
+    // flags: bit0 = isCharging, bit1 = isElite
+    const flags = (e.isCharging ? 1 : 0) | (e.isElite ? 2 : 0);
+    data.push(e.id, Math.round(e.x), Math.round(e.y), e.hp, flags,
+              Math.round(e.vx), Math.round(e.vy));
+  }
+  return data;
+}
+
+function getFullEnemyList(room: Room): ServerEnemy[] {
+  const list: ServerEnemy[] = [];
+  for (const e of room.enemies.values()) {
+    if (e.dead) continue;
+    list.push({
+      id: e.id, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+      isBoss: e.isBoss, isElite: e.isElite, isCharging: e.isCharging,
+    });
+  }
+  return list;
+}
+
+function getTeamScores(room: Room): S2C_TeamScores {
+  const scores: Record<Team, { kills: number; bossContrib: number; players: number }> =
+    { blue: { kills: 0, bossContrib: 0, players: 0 }, red: { kills: 0, bossContrib: 0, players: 0 },
+      green: { kills: 0, bossContrib: 0, players: 0 }, yellow: { kills: 0, bossContrib: 0, players: 0 } };
+  for (const p of room.players.values()) {
+    const t = p.data.team;
+    scores[t].kills += p.data.kills;
+    scores[t].players++;
+  }
+  for (const t of TEAMS) {
+    scores[t].bossContrib = room.boss.teamDamage[t] ?? 0;
+  }
+  return { type: 'team_scores', scores };
+}
+
+function getLeaderboard(room: Room): S2C_Leaderboard {
+  const entries = Array.from(room.players.values())
+    .map(p => ({ name: p.data.name, kills: p.data.kills, level: p.data.level, team: p.data.team }))
+    .sort((a, b) => b.kills - a.kills)
+    .slice(0, 10);
+  return { type: 'leaderboard', entries };
+}
+
+// ─── MIME types for static serving ──────────
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+};
+
+const DIST_DIR = path.resolve(import.meta.dirname ?? '.', '..', 'dist');
+
+// ─── HTTP + WebSocket Server ────────────────
+const server = http.createServer((req, res) => {
+  // Health check
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', rooms: rooms.size }));
+    return;
+  }
+
+  // Static file serving (dist/)
+  let filePath = path.join(DIST_DIR, req.url === '/' ? 'index.html' : req.url!);
+  // Prevent directory traversal
+  if (!filePath.startsWith(DIST_DIR)) {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      // SPA fallback: serve index.html for non-file routes
+      if (err.code === 'ENOENT' && !ext) {
+        fs.readFile(path.join(DIST_DIR, 'index.html'), (err2, data2) => {
+          if (err2) { res.writeHead(404); res.end('Not Found'); return; }
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(data2);
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end('Not Found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(data);
+  });
+});
+
+const wss = new WebSocketServer({ server, path: '/ws' });
+wss.on('error', (err) => { console.error('WSS error:', err.message); });
+server.listen(PORT, () => {
+  console.log(`Geo Survivors server running on http://localhost:${PORT} (ws: /ws)`);
+});
+
+wss.on('connection', (ws: WebSocket) => {
+  let playerId = '';
+  let playerRoom: Room | null = null;
+  console.log('New WebSocket connection');
+
+  ws.on('message', (raw: Buffer) => {
+    let msg: C2S_Message;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    try { switch (msg.type) {
+      case 'join': {
+        playerId = generateId();
+        const room = findOrCreateRoom(msg.roomCode);
+        playerRoom = room;
+        const team = getSmallestTeam(room);
+
+        const playerData: PlayerData = {
+          id: playerId,
+          name: msg.name || `Player_${playerId.slice(0, 4)}`,
+          team,
+          x: 0, y: 0, level: 1, kills: 0,
+          hp: 100, maxHp: 100, rotation: 0, alive: true,
+          weapons: [],
+        };
+
+        room.players.set(playerId, { ws, data: playerData, lastUpdate: Date.now() });
+
+        const welcome: S2C_Welcome = {
+          type: 'welcome',
+          id: playerId, team,
+          roomCode: room.code,
+          players: Array.from(room.players.values()).map(p => p.data),
+          boss: room.boss,
+          enemies: getFullEnemyList(room),
+          serverTime: room.serverTime,
+          nextBossTime: room.nextBossTime,
+        };
+        send(ws, welcome);
+        broadcast(room, { type: 'player_join', player: playerData }, playerId);
+        console.log(`[${room.code}] ${playerData.name} joined team ${team} (${room.players.size} players)`);
+        break;
+      }
+
+      case 'state': {
+        if (!playerRoom) return;
+        const sp = playerRoom.players.get(playerId);
+        if (!sp) return;
+        // Clamp player position to map boundaries
+        const clamped = clampToMap(msg.x, msg.y);
+        sp.data.x = clamped.x;
+        sp.data.y = clamped.y;
+        sp.data.level = msg.level;
+        sp.data.kills = msg.kills;
+        sp.data.hp = msg.hp;
+        sp.data.maxHp = msg.maxHp;
+        sp.data.rotation = msg.rotation;
+        sp.data.alive = msg.hp > 0;
+        if (msg.weapons) {
+          sp.data.weapons = msg.weapons;
+        }
+        sp.lastUpdate = Date.now();
+        break;
+      }
+
+      case 'enemy_hit': {
+        if (!playerRoom) return;
+        const sp = playerRoom.players.get(playerId);
+        if (!sp) return;
+        const enemy = playerRoom.enemies.get(msg.enemyId);
+        if (!enemy || enemy.dead) return;
+
+        // Anti-cheat: cap damage per hit at 200
+        const dmg = Math.min(msg.damage, 200);
+        enemy.hp -= dmg;
+
+        // Boss damage tracking
+        if (enemy.isBoss && playerRoom.boss.active) {
+          playerRoom.boss.hp = enemy.hp;
+          playerRoom.boss.teamDamage[sp.data.team] += dmg;
+
+          const upd: S2C_BossUpdate = {
+            type: 'boss_update',
+            hp: Math.max(0, enemy.hp),
+            teamDamage: playerRoom.boss.teamDamage,
+          };
+          broadcast(playerRoom, upd);
+        }
+
+        if (enemy.hp <= 0) {
+          enemy.dead = true;
+          const deathMsg: S2C_EnemyDeath = {
+            type: 'enemy_death',
+            enemyId: enemy.id,
+            killerTeam: sp.data.team,
+            x: enemy.x, y: enemy.y,
+            xp: enemy.xp,
+            isBoss: enemy.isBoss,
+          };
+          broadcast(playerRoom, deathMsg);
+
+          playerRoom.teamKills[sp.data.team]++;
+
+          // Boss death
+          if (enemy.isBoss && playerRoom.boss.active) {
+            playerRoom.boss.active = false;
+            let maxDmg = 0;
+            let winner: Team = 'blue';
+            for (const t of TEAMS) {
+              if (playerRoom.boss.teamDamage[t] > maxDmg) {
+                maxDmg = playerRoom.boss.teamDamage[t];
+                winner = t;
+              }
+            }
+            const deadMsg: S2C_BossDead = { type: 'boss_dead', winningTeam: winner, bossId: enemy.id };
+            broadcast(playerRoom, deadMsg);
+            console.log(`[${playerRoom.code}] Boss killed! Winner: ${winner}`);
+          }
+
+          setTimeout(() => { playerRoom?.enemies.delete(enemy.id); }, 1000);
+
+          // Splitter: spawn mini enemies
+          if (enemy.type === 'splitter' && !enemy.isBoss) {
+            for (let s = 0; s < 3; s++) {
+              const a = (Math.PI * 2 / 3) * s + Math.random() * 0.5;
+              const mx = enemy.x + Math.cos(a) * 20;
+              const my = enemy.y + Math.sin(a) * 20;
+              const mini = createRoomEnemy(playerRoom, 'triangle', mx, my, {
+                hpOverride: Math.floor(15 * (1 + (playerRoom.serverTime / 60) * 0.5)),
+                speedOverride: 100,
+                xpOverride: 1,
+              });
+              playerRoom.enemies.set(mini.id, mini);
+              broadcast(playerRoom, {
+                type: 'enemy_spawn',
+                enemy: { id: mini.id, type: 'triangle', x: mini.x, y: mini.y, hp: mini.hp, maxHp: mini.maxHp, isBoss: false },
+              });
+            }
+          }
+        }
+        break;
+      }
+
+      case 'pvp_hit': {
+        if (!playerRoom) return;
+        const attacker = playerRoom.players.get(playerId);
+        const target = playerRoom.players.get(msg.targetId);
+        if (!attacker || !target) return;
+        if (attacker.data.team === target.data.team) return;
+        const dmg = Math.min(msg.damage, 100);
+        const pvpMsg: S2C_PvpDamage = {
+          type: 'pvp_damage',
+          fromId: playerId,
+          fromTeam: attacker.data.team,
+          damage: dmg,
+        };
+        send(target.ws, pvpMsg);
+        break;
+      }
+
+      case 'chat': {
+        if (!playerRoom) return;
+        const sp = playerRoom.players.get(playerId);
+        if (!sp) return;
+        broadcast(playerRoom, {
+          type: 'chat', name: sp.data.name, team: sp.data.team, msg: msg.msg.slice(0, 100),
+        });
+        break;
+      }
+
+      case 'ping': {
+        if (!playerRoom) return;
+        const sp = playerRoom.players.get(playerId);
+        if (!sp) return;
+        const pingMsg: S2C_PingSignal = {
+          type: 'ping_signal',
+          x: msg.x,
+          y: msg.y,
+          team: sp.data.team,
+          playerName: sp.data.name,
+        };
+        broadcast(playerRoom, pingMsg, playerId);
+        break;
+      }
+
+      case 'pull_request': {
+        if (!playerRoom) return;
+        // Apply pull force to enemies near the specified position
+        for (const enemy of playerRoom.enemies.values()) {
+          if (enemy.dead) continue;
+          const edx = msg.x - enemy.x;
+          const edy = msg.y - enemy.y;
+          const eDist = Math.sqrt(edx * edx + edy * edy);
+          if (eDist < msg.radius && eDist > 30) {
+            const pullForce = msg.strength * TICK_S;
+            enemy.x += (edx / eDist) * pullForce;
+            enemy.y += (edy / eDist) * pullForce;
+          }
+        }
+        break;
+      }
+    } } catch (err) {
+      console.error(`Error handling message from ${playerId}:`, err);
+    }
+  });
+
+  ws.on('error', (err) => {
+    console.error(`WebSocket error for ${playerId}:`, err.message);
+  });
+
+  ws.on('close', () => {
+    if (playerRoom && playerId) {
+      playerRoom.players.delete(playerId);
+      broadcast(playerRoom, { type: 'player_leave', id: playerId });
+      console.log(`[${playerRoom.code}] Player ${playerId} left (${playerRoom.players.size} remain)`);
+      if (playerRoom.players.size === 0) {
+        rooms.delete(playerRoom.code);
+        console.log(`Room ${playerRoom.code} deleted (empty)`);
+      }
+    }
+  });
+});
+
+// ─── Game Loop ──────────────────────────────
+setInterval(() => {
+  const now = Date.now();
+
+  for (const room of rooms.values()) {
+    if (room.players.size === 0) continue;
+
+    room.serverTime += TICK_S;
+
+    // Spawn enemies
+    const srvMins = room.serverTime / 60;
+    const difficulty = 1 + srvMins * 0.4 + Math.pow(srvMins / 10, 1.5);
+    const spawnInterval = Math.max(0.3, 1.2 / difficulty);
+    room.spawnTimer -= TICK_S;
+    if (room.spawnTimer <= 0 && room.enemies.size < MAX_ENEMIES) {
+      room.spawnTimer = spawnInterval;
+      const count = Math.floor(1 + difficulty * 0.3 + room.players.size * 0.2);
+      for (let i = 0; i < count && room.enemies.size < MAX_ENEMIES; i++) {
+        spawnEnemy(room);
+      }
+    }
+
+    // Wave event (periodic large wave)
+    if (room.serverTime >= room.nextWaveEventTime && room.players.size > 0) {
+      room.nextWaveEventTime = room.serverTime + WAVE_EVENT_INTERVAL;
+      spawnWaveEnemies(room);
+    }
+
+    // Boss spawn
+    if (!room.boss.active && room.serverTime >= room.nextBossTime) {
+      spawnBoss(room);
+    }
+
+    // Update enemy positions
+    updateEnemies(room);
+
+    // Broadcast player positions
+    room.playerSyncAccum += TICK_MS;
+    if (room.playerSyncAccum >= PLAYER_SYNC_MS) {
+      room.playerSyncAccum = 0;
+      const sync: S2C_PlayersSync = {
+        type: 'players_sync',
+        players: Array.from(room.players.values()).map(p => p.data),
+      };
+      broadcast(room, sync);
+    }
+
+    // Broadcast enemy positions (compact format with flags)
+    room.enemySyncAccum += TICK_MS;
+    if (room.enemySyncAccum >= ENEMY_SYNC_MS) {
+      room.enemySyncAccum = 0;
+      const esync: S2C_EnemiesSync = {
+        type: 'enemies_sync',
+        data: buildEnemySyncData(room),
+      };
+      broadcast(room, esync);
+    }
+
+    // Scoreboard
+    room.scoreAccum += TICK_MS;
+    if (room.scoreAccum >= SCOREBOARD_MS) {
+      room.scoreAccum = 0;
+      broadcast(room, getTeamScores(room));
+      broadcast(room, getLeaderboard(room));
+    }
+
+    // Remove stale players
+    for (const [id, p] of room.players) {
+      if (now - p.lastUpdate > 15000) {
+        p.ws.close();
+        room.players.delete(id);
+        broadcast(room, { type: 'player_leave', id });
+      }
+    }
+
+    // Clean dead enemies
+    for (const [id, e] of room.enemies) {
+      if (e.dead) room.enemies.delete(id);
+    }
+  }
+}, TICK_MS);
