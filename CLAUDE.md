@@ -155,53 +155,9 @@ vite.config.ts           # Vite 설정
 - Exponential backoff 재연결 (1s→2s→4s→...max 30s, UI에 시도 횟수 표시)
 - Render.com 배포 완료: https://geo-survivors.onrender.com
 
-## Pending Bugs (2026-02-27) — 다음 세션에서 수정 필요
+## Pending Bugs
 
-### Bug 1: 원격 플레이어 무기 표시 오류 (RemotePlayer.ts)
-**증상**: 로컬의 궤도 다이아몬드가 다른 플레이어에겐 작은 구체로 보임
-**원인 분석**:
-1. **rotation 간섭**: `weaponVisuals`가 `container`의 자식 → `container.rotation`이 `weaponVisuals`에도 적용됨. 실제 OrbitWeapon은 월드 좌표 기준이라 rotation 영향 안 받지만, RemotePlayer의 비주얼은 container 로컬 좌표에서 그려져 rotation으로 찌그러짐
-2. **무기 sync 누락**: 무기 데이터는 변경 시에만 전송 (`sendWeapons` 플래그). `players_sync`에서 무기 미포함 시 `syncData()`의 `data.weapons`가 undefined → 기존 `this.weapons`가 빈 배열이면 fallback 구체가 계속 표시됨
-3. **fallback 코드** (RemotePlayer.ts:200~213): `this.weapons.length === 0`이면 `circle()`로 작은 구체 그림 — 이게 "작은 구체"의 정체
-
-**해결 방안**:
-- `weaponVisuals`를 `container` 밖 별도 Container로 분리 (rotation 영향 제거), 또는 `weaponVisuals`에 역-rotation 적용
-- 서버에서 `players_sync` 시 항상 최신 무기 데이터를 PlayerData에 포함 (또는 서버가 각 플레이어의 마지막 무기 데이터를 캐싱해서 relay)
-- `welcome` 시 기존 플레이어의 무기 정보도 포함되어야 함
-- **핵심 파일**: `RemotePlayer.ts`, `server/index.ts` (PlayerData relay), `Game.ts` (weaponSync 전송 로직)
-
-### Bug 2: 레벨업 창 자동 닫힘 (Game.ts:1094~1103)
-**증상**: 멀티에서 레벨업 창이 일정 시간 후 혼자 닫히며 랜덤 선택됨
-**원인**: `showLevelUp()` 안에 8초 `setTimeout` auto-dismiss 코드:
-```ts
-// Game.ts:1094~1103
-if (this.isMultiplayer) {
-  setTimeout(() => {
-    if (this.levelUpShown && choices.length > 0) {
-      const autoChoice = choices[Math.floor(Math.random() * choices.length)];
-      this.ui.hideLevelUp();
-      onChoice(autoChoice);
-    }
-  }, 8000);
-}
-```
-**해결 방안**: 자동 닫힘 제거. 멀티에서도 유저가 직접 선택하도록 변경. 게임이 멈추지 않으므로 UI에 "선택 대기 중" 상태만 표시.
-
-### Bug 3: 적 이동 끊김 (Enemy.ts lerpToServer + server ENEMY_SYNC_MS)
-**증상**: 몬스터가 부드럽게 안 움직이고 조금씩 끊겨 보임
-**원인 분석**:
-1. 서버가 **200ms마다** `enemies_sync` 전송 (초당 5번) — `server/index.ts:18 ENEMY_SYNC_MS = 200`
-2. `lerpToServer()`의 보간: `t = Math.min(1, 10 * dt)` → 60fps에서 `dt≈0.016`, `t≈0.16`
-3. **Exponential lerp 문제**: 목표에 가까워질수록 느려짐 → "빠른 점프 후 정지" 패턴이 200ms마다 반복 → 끊김 체감
-4. sync 사이 구간(200ms)에서 적이 멈춰있다가 새 sync 오면 다시 점프하는 패턴
-
-**해결 방안** (택 1 또는 조합):
-- **방안 A: Dead Reckoning** — 서버가 `enemies_sync`에 적의 `targetX/Y`(이동 목표) + `speed`도 포함. 클라이언트가 sync 사이에서 예측 이동. 가장 효과적.
-  - `enemies_sync` 포맷 확장: `[id, x, y, hp, flags, targetX, targetY, speed]` (8-element)
-  - `Enemy`에 `targetX/Y`, `moveSpeed` 추가. `lerpToServer()` 대신 서버 위치로 보정하면서 target 방향으로 이동
-- **방안 B: Sync 주기 단축** — `ENEMY_SYNC_MS`를 200→100ms로. 단순하지만 대역폭 2배.
-- **방안 C: 선형 보간** — 이전/현재 서버 위치와 타임스탬프 저장, sync 간격 동안 일정 속도로 보간. exponential이 아닌 linear interpolation.
-- **권장**: 방안 A (dead reckoning)가 근본적 해결. 방안 C도 괜찮은 대안.
+현재 알려진 미해결 버그 없음.
 
 ## Resolved Issues (전체)
 - ~~적이 플레이어별로 개별 이동~~ → 멀티에서 클라이언트 AI 완전 제거, 서버 위치 보간만
@@ -210,6 +166,9 @@ if (this.isMultiplayer) {
 - ~~Charger 떨림~~ → 서버 charging 상태 동기화
 - ~~OrbitWeapon pull 비활성화~~ → 서버 pull_request로 재활성화
 - ~~ChainLightning/beam 멀티 데미지 미보고~~ → pendingHits 패턴으로 getHits() 반환
+- ~~RemotePlayer 무기 구체로 표시~~ → rotation 간섭 해결 + sync 누락 수정
+- ~~레벨업 창 8초 자동 닫힘~~ → setTimeout 제거, 유저 직접 선택
+- ~~적 이동 끊김~~ → dead reckoning 방식으로 lerpToServer() 개선
 
 ## Death/Respawn System (Multiplayer)
 
