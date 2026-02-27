@@ -41,6 +41,7 @@ export class UI {
   private onResumeCallback: (() => void) | null = null;
   private onQuitCallback: (() => void) | null = null;
   private onVolumeCallback: ((v: number) => void) | null = null;
+  private onChatSendCallback: ((msg: string) => void) | null = null;
 
   constructor() {
     this.hpFill = document.getElementById('hp-fill')!;
@@ -104,6 +105,20 @@ export class UI {
         setLang(lang);
         this.applyLang();
       });
+    });
+
+    // Chat input: Enter to send+close, Escape to close
+    const chatInput = document.getElementById('chat-input') as HTMLInputElement;
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.code === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const msg = chatInput.value.trim();
+        if (msg && this.onChatSendCallback) {
+          this.onChatSendCallback(msg);
+        }
+        this.closeChatInput();
+      }
     });
 
     // Auto-detect language
@@ -528,6 +543,10 @@ export class UI {
   }
 
   // ─── Chat ───────────────────────────
+  onChatSend(cb: (msg: string) => void): void {
+    this.onChatSendCallback = cb;
+  }
+
   openChatInput(): void {
     const row = document.getElementById('chat-input-row')!;
     const input = document.getElementById('chat-input') as HTMLInputElement;

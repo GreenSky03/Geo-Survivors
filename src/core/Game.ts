@@ -172,20 +172,10 @@ export class Game {
 
     // ESC to pause (solo only), G to ping (multiplayer), Enter for chat
     window.addEventListener('keydown', (e) => {
-      // Chat input handling (multiplayer)
+      // Chat: open input (multiplayer, Enter when not focused)
       if (this.isMultiplayer && this.gameActive && this.started) {
-        if (e.code === 'Enter') {
-          if (this.ui.isChatInputFocused()) {
-            // Send message and close
-            const msg = this.ui.getChatInputValue();
-            if (msg && this.net.connected) {
-              this.net.sendChat(msg);
-            }
-            this.ui.closeChatInput();
-          } else {
-            // Open chat input
-            this.ui.openChatInput();
-          }
+        if (e.code === 'Enter' && !this.ui.isChatInputFocused()) {
+          this.ui.openChatInput();
           e.preventDefault();
           return;
         }
@@ -212,6 +202,11 @@ export class Game {
       () => this.quitToTitle(),
       (v) => this.sound.setVolume(v),
     );
+
+    // Chat send callback
+    this.ui.onChatSend((msg) => {
+      if (this.net.connected) this.net.sendChat(msg);
+    });
 
     // Mobile chat toggle button
     document.getElementById('chat-toggle-btn')!.addEventListener('click', () => {
@@ -469,6 +464,8 @@ export class Game {
     });
 
     this.net.on('ping_signal', (data) => {
+      // Only show pings from same team
+      if (data.team !== this.net.myTeam) return;
       this.activePings.push({ x: data.x, y: data.y, team: data.team, name: data.playerName, timer: 4 });
       this.sound.playPickup();
     });
