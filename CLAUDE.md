@@ -94,8 +94,9 @@ index.html               # HTML + CSS (UI 오버레이)
   - 메시지 최대 100자, 화면 최대 10개, 8초 페이드 → 15초 제거
   - `NetworkManager.sendChat()` → 서버 브로드캐스트 → `UI.addChatMessage()` (HTML escape)
   - `Input.movementBlocked` 플래그로 채팅 중 이동 차단
-- **핑**: G키 + 모바일 핑 버튼(📍), 같은 팀만 표시 (다른 팀 핑은 무시)
-- **ForceField**: knockback/slow는 솔로 전용 (`serverId < 0` 가드), 멀티에서는 데미지 틱만
+- **핑**: G키 + 모바일 핑 버튼(SVG 원형), 같은 팀만 표시 (다른 팀 핑은 무시)
+- **ForceField**: 둔화 효과 (솔로: 30%/evolved 50%, 멀티: 서버에서 동일 적용) + 데미지 틱
+  - 서버: ForceField 가진 플레이어 주변 적 speed = baseSpeed × 0.7, 밖에서 2×baseSpeed/s 복구
 - **모바일 반응형 UI**: `@media 768px` (태블릿), `@media 480px` (모바일) — 레벨업 세로 스택, HUD/미니맵/채팅 축소
 
 ## Key Constants
