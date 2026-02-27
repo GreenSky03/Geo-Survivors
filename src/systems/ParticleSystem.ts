@@ -12,12 +12,37 @@ interface Particle {
   graphic: Graphics;
 }
 
+const POOL_MAX = 100;
+
 export class ParticleSystem {
   public container: Container;
   private particles: Particle[] = [];
+  private pool: Graphics[] = [];
 
   constructor() {
     this.container = new Container();
+  }
+
+  private getGraphic(): Graphics {
+    if (this.pool.length > 0) {
+      const g = this.pool.pop()!;
+      g.clear();
+      g.alpha = 1;
+      g.scale.set(1);
+      g.visible = true;
+      return g;
+    }
+    return new Graphics();
+  }
+
+  private returnGraphic(g: Graphics): void {
+    g.visible = false;
+    this.container.removeChild(g);
+    if (this.pool.length < POOL_MAX) {
+      this.pool.push(g);
+    } else {
+      g.destroy();
+    }
   }
 
   /** Burst of particles at a position (e.g. enemy death) */
@@ -25,7 +50,7 @@ export class ParticleSystem {
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 / count) * i + (Math.random() - 0.5) * 0.5;
       const spd = speed * (0.5 + Math.random() * 0.8);
-      const g = new Graphics();
+      const g = this.getGraphic();
       const size = 2 + Math.random() * 4;
       g.rect(-size / 2, -size / 2, size, size);
       g.fill({ color, alpha: 1 });
@@ -50,7 +75,7 @@ export class ParticleSystem {
     for (let i = 0; i < 3; i++) {
       const angle = Math.random() * Math.PI * 2;
       const spd = 80 + Math.random() * 120;
-      const g = new Graphics();
+      const g = this.getGraphic();
       g.circle(0, 0, 1.5 + Math.random() * 1.5);
       g.fill({ color, alpha: 0.9 });
       g.x = x;
@@ -85,8 +110,7 @@ export class ParticleSystem {
       p.graphic.scale.set(alpha);
 
       if (p.life <= 0) {
-        this.container.removeChild(p.graphic);
-        p.graphic.destroy();
+        this.returnGraphic(p.graphic);
         this.particles.splice(i, 1);
       }
     }
@@ -94,8 +118,7 @@ export class ParticleSystem {
 
   clear(): void {
     for (const p of this.particles) {
-      this.container.removeChild(p.graphic);
-      p.graphic.destroy();
+      this.returnGraphic(p.graphic);
     }
     this.particles = [];
   }

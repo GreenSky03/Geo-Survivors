@@ -115,6 +115,7 @@ export class RemotePlayer {
   public hp = 100;
   public maxHp = 100;
   public alive = true;
+  public justDied = false;
   public weapons: WeaponSyncData[] = [];
 
   private nameText: Text;
@@ -214,6 +215,8 @@ export class RemotePlayer {
     this.kills = data.kills;
     this.hp = data.hp;
     this.maxHp = data.maxHp;
+    // Detect death transition
+    this.justDied = this.alive && !data.alive;
     this.alive = data.alive;
     if (data.weapons && data.weapons.length > 0) {
       this.weapons = data.weapons;

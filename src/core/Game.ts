@@ -17,7 +17,7 @@ import { SoundManager } from '../systems/SoundManager';
 import { Trail } from '../systems/Trail';
 import { NetworkManager } from '../net/NetworkManager';
 import { UI } from '../ui/UI';
-import { randomAngle, distance } from '../utils/math';
+import { randomAngle, distance, lerp } from '../utils/math';
 import type { Team, PlayerData, BossData, ServerEnemy, WeaponSyncData } from '../../shared/protocol';
 import { TEAM_COLORS, MAP_HALF_W, MAP_HALF_H } from '../../shared/protocol';
 
@@ -127,6 +127,10 @@ export class Game {
 
   // Pull request throttle
   private pullRequestTimer = 0;
+
+  // Death slow-motion effect
+  private deathSlowTimer = 0;
+  private deathSlowDuration = 0.3;
 
   async init(): Promise<void> {
     this.app = new Application();
@@ -284,8 +288,17 @@ export class Game {
       for (const pd of players) {
         if (pd.id === this.net.myId) continue;
         const rp = this.remotePlayers.get(pd.id);
-        if (rp) rp.syncData(pd);
-        else this.addRemotePlayer(pd);
+        if (rp) {
+          rp.syncData(pd);
+          // Remote player death: particle burst + kill log
+          if (rp.justDied) {
+            this.particles.burst(rp.targetX, rp.targetY, 0xff4466, 15, 250);
+            this.ui.addKillLogEntry('Enemy', 'red', rp.name);
+            rp.justDied = false;
+          }
+        } else {
+          this.addRemotePlayer(pd);
+        }
       }
       // Update ping display
       this.ui.updatePingDisplay(this.net.latencyMs);
@@ -313,8 +326,8 @@ export class Game {
           enemy.serverX = sx;
           enemy.serverY = sy;
           enemy.hp = hp;
-          enemy.serverVx = vx;
-          enemy.serverVy = vy;
+          enemy.serverVx = lerp(enemy.serverVx, vx, 0.4);
+          enemy.serverVy = lerp(enemy.serverVy, vy, 0.4);
           enemy.lastSyncTime = Date.now();
 
           // Elite visual scaling
@@ -604,6 +617,15 @@ export class Game {
 
   private update(dt: number): void {
     dt = Math.min(dt, 0.05);
+
+    // Death slow-motion effect
+    if (this.deathSlowTimer > 0) {
+      this.deathSlowTimer -= dt;
+      const t = Math.max(0, this.deathSlowTimer / this.deathSlowDuration);
+      dt *= 0.2 + 0.8 * (1 - t); // 20% → 100% speed over duration
+      this.world.alpha = 0.6 + 0.4 * (1 - t); // 0.6 → 1.0
+    }
+
     this.gameTime += dt;
     const minutes = this.gameTime / 60;
     const difficulty = 1 + minutes * 0.4 + Math.pow(minutes / 10, 1.5);
@@ -851,11 +873,11 @@ export class Game {
       if (newEnemies.length > 0) this.enemies.push(...newEnemies);
     }
 
-    // XP Orbs
+    // XP Orbs (dead players cannot collect)
     for (let i = this.xpOrbs.length - 1; i >= 0; i--) {
       const orb = this.xpOrbs[i];
-      orb.update(dt, this.player.x, this.player.y, this.player.magnetRange);
-      if (orb.collected) {
+      orb.update(dt, this.player.x, this.player.y, this.player.alive ? this.player.magnetRange : 0);
+      if (this.player.alive && orb.collected) {
         this.addXp(orb.xpAmount);
         this.sound.playXP();
         this.world.removeChild(orb.container);
@@ -864,11 +886,11 @@ export class Game {
       }
     }
 
-    // Pickups
+    // Pickups (dead players cannot collect)
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const p = this.pickups[i];
       p.update(dt, this.player.x, this.player.y);
-      if (p.collected) {
+      if (this.player.alive && p.collected) {
         this.applyPickup(p);
         this.world.removeChild(p.container);
         p.container.destroy();
@@ -917,6 +939,8 @@ export class Game {
       this.sound.playGameOver();
       this.screenShake.trigger(15);
       this.particles.burst(this.player.x, this.player.y, 0x00e6b0, 25, 350);
+      // Trigger death slow-motion
+      this.deathSlowTimer = this.deathSlowDuration;
 
       if (this.isMultiplayer) {
         // Multiplayer: show death overlay, start respawn countdown
@@ -924,6 +948,10 @@ export class Game {
         this.player.container.visible = false;
         // Hide weapons
         for (const w of this.weapons) w.container.visible = false;
+        // Clear any open level-up screen (prevent stale choices after respawn reset)
+        this.ui.hideLevelUp();
+        this.levelUpShown = false;
+        this.levelUpPending = 0;
         this.ui.showRespawnOverlay();
         this.ui.updateRespawnTimer(this.respawnDelay, this.respawnDelay);
       } else {
@@ -1033,6 +1061,7 @@ export class Game {
   }
 
   private addXp(amount: number): void {
+    if (!this.player.alive) return;
     // Late-game XP bonus: +100% per 5 minutes
     const xpMultiplier = 1 + this.gameTime / 300;
     this.xp += Math.floor(amount * xpMultiplier);
