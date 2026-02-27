@@ -97,19 +97,17 @@ export class ForceField extends WeaponBase {
     this.container.x = px;
     this.container.y = py;
 
-    // Knockback & slow enemies in range
+    // Knockback & slow enemies in range (solo only — multiplayer enemies are server-authoritative)
     for (const enemy of enemies) {
       if (enemy.dead) continue;
       const dist = distance(px, py, enemy.x, enemy.y);
-      if (dist < d.radius && dist > 1) {
-        // Knockback
+      if (dist < d.radius && dist > 1 && enemy.serverId < 0) {
         const dx = enemy.x - px;
         const dy = enemy.y - py;
         const pushStr = d.knockback * dt / dist;
         enemy.x += dx * pushStr;
         enemy.y += dy * pushStr;
 
-        // Evolved: slow enemies inside
         if (this.evolved) {
           enemy.speed = Math.max(20, enemy.speed * 0.98);
         }

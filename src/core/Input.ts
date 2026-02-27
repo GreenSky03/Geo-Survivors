@@ -1,5 +1,6 @@
 export class Input {
   private keys = new Set<string>();
+  public movementBlocked = false;
 
   // Touch joystick
   private touchActive = false;
@@ -120,6 +121,8 @@ export class Input {
   }
 
   getMovementVector(): { x: number; y: number } {
+    if (this.movementBlocked) return { x: 0, y: 0 };
+
     // Touch joystick takes priority
     if (this.touchActive && (this.touchDx !== 0 || this.touchDy !== 0)) {
       return { x: this.touchDx, y: this.touchDy };

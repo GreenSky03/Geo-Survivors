@@ -170,13 +170,38 @@ export class Game {
       });
     }
 
-    // ESC to pause (solo only), G to ping (multiplayer)
+    // ESC to pause (solo only), G to ping (multiplayer), Enter for chat
     window.addEventListener('keydown', (e) => {
+      // Chat input handling (multiplayer)
+      if (this.isMultiplayer && this.gameActive && this.started) {
+        if (e.code === 'Enter') {
+          if (this.ui.isChatInputFocused()) {
+            // Send message and close
+            const msg = this.ui.getChatInputValue();
+            if (msg && this.net.connected) {
+              this.net.sendChat(msg);
+            }
+            this.ui.closeChatInput();
+          } else {
+            // Open chat input
+            this.ui.openChatInput();
+          }
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'Escape' && this.ui.isChatInputFocused()) {
+          this.ui.closeChatInput();
+          e.preventDefault();
+          return;
+        }
+      }
+
       if (e.code === 'Escape' && this.gameActive && this.started && !this.isMultiplayer) {
         if (this.pausedByMenu) this.resumeGame();
         else if (!this.paused) this.pauseGame();
       }
       if (e.code === 'KeyG' && this.isMultiplayer && this.gameActive && this.started && this.net.connected) {
+        if (this.ui.isChatInputFocused()) return; // Don't ping while chatting
         this.net.sendPing(this.player.x, this.player.y);
         this.activePings.push({ x: this.player.x, y: this.player.y, team: this.net.myTeam, name: 'You', timer: 4 });
       }
@@ -187,6 +212,17 @@ export class Game {
       () => this.quitToTitle(),
       (v) => this.sound.setVolume(v),
     );
+
+    // Mobile chat toggle button
+    document.getElementById('chat-toggle-btn')!.addEventListener('click', () => {
+      if (this.ui.isChatInputFocused()) {
+        const msg = this.ui.getChatInputValue();
+        if (msg && this.net.connected) this.net.sendChat(msg);
+        this.ui.closeChatInput();
+      } else {
+        this.ui.openChatInput();
+      }
+    });
 
     // Auto-pause on blur (solo only)
     window.addEventListener('blur', () => {
@@ -437,6 +473,10 @@ export class Game {
       this.sound.playPickup();
     });
 
+    this.net.on('chat', (data) => {
+      this.ui.addChatMessage(data.name, data.team, data.msg);
+    });
+
     this.net.on('wave_event', (data) => {
       this.ui.showWaveEvent(data.waveNumber, data.enemyCount);
       this.screenShake.trigger(8);
@@ -629,6 +669,9 @@ export class Game {
     this.gameTime += dt;
     const minutes = this.gameTime / 60;
     const difficulty = 1 + minutes * 0.4 + Math.pow(minutes / 10, 1.5);
+
+    // Block movement while chat input is focused
+    this.input.movementBlocked = this.ui.isChatInputFocused();
 
     const prevX = this.player.x;
     const prevY = this.player.y;

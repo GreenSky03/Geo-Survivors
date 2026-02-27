@@ -158,6 +158,10 @@ export class NetworkManager {
     this.send({ type: 'pull_request', x, y, strength, radius });
   }
 
+  sendChat(msg: string): void {
+    this.send({ type: 'chat', msg });
+  }
+
   on<K extends keyof NetEventMap>(event: K, listener: Listener<NetEventMap[K]>): void {
     if (!this.listeners.has(event)) this.listeners.set(event, []);
     this.listeners.get(event)!.push(listener);

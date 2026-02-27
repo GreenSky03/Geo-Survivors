@@ -412,6 +412,11 @@ export class UI {
     document.getElementById('kill-log')!.style.display = show ? 'block' : 'none';
     document.getElementById('ping-display')!.style.display = show ? 'block' : 'none';
     document.getElementById('ping-hint')!.style.display = show ? 'block' : 'none';
+    document.getElementById('chat-panel')!.style.display = show ? 'block' : 'none';
+    // Show chat toggle button on touch devices only
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    document.getElementById('chat-toggle-btn')!.style.display =
+      show && isTouchDevice ? 'flex' : 'none';
   }
 
   updatePingDisplay(ms: number): void {
@@ -522,12 +527,58 @@ export class UI {
     document.getElementById('respawn-overlay')!.style.display = 'none';
   }
 
+  // ─── Chat ───────────────────────────
+  openChatInput(): void {
+    const row = document.getElementById('chat-input-row')!;
+    const input = document.getElementById('chat-input') as HTMLInputElement;
+    row.style.display = 'block';
+    input.value = '';
+    input.focus();
+  }
+
+  closeChatInput(): void {
+    const row = document.getElementById('chat-input-row')!;
+    const input = document.getElementById('chat-input') as HTMLInputElement;
+    row.style.display = 'none';
+    input.blur();
+  }
+
+  isChatInputFocused(): boolean {
+    const input = document.getElementById('chat-input');
+    return input !== null && document.activeElement === input;
+  }
+
+  getChatInputValue(): string {
+    return (document.getElementById('chat-input') as HTMLInputElement).value.trim();
+  }
+
+  addChatMessage(name: string, team: string, msg: string): void {
+    const container = document.getElementById('chat-messages')!;
+    const teamColors: Record<string, string> = { blue: '#4488ff', red: '#ff4466', green: '#44ff88', yellow: '#ffcc44' };
+    const el = document.createElement('div');
+    el.className = 'chat-msg';
+    // HTML escape
+    const safe = msg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    el.innerHTML = `<span style="color:${teamColors[team] || '#fff'}">${name.replace(/</g, '&lt;')}</span>: ${safe}`;
+    container.appendChild(el);
+
+    // Keep max 10 messages
+    while (container.children.length > 10) {
+      container.removeChild(container.children[0]);
+    }
+
+    // Fade after 8s, remove after 15s
+    setTimeout(() => { el.classList.add('fading'); }, 8000);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 15000);
+  }
+
   hideAll(): void {
     this.hideLevelUp();
     this.hideGameOver();
     this.hidePause();
     this.hideBossHp();
     this.hideRespawnOverlay();
+    this.closeChatInput();
     this.bossWarning.style.display = 'none';
   }
 }
