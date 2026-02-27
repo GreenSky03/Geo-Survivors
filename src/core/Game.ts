@@ -216,21 +216,22 @@ export class Game {
       if (this.net.connected) this.net.sendChat(msg);
     });
 
-    // Mobile chat toggle button (💬 to open, ✕ to close)
+    // Mobile chat toggle button (chat icon to open, ✕ to close)
     const chatToggleBtn = document.getElementById('chat-toggle-btn')!;
+    const chatIconSvg = chatToggleBtn.innerHTML;
     chatToggleBtn.addEventListener('click', () => {
       if (this.ui.isChatInputFocused()) {
         this.ui.closeChatInput();
       } else {
         this.ui.openChatInput();
-        chatToggleBtn.textContent = '✕';
+        chatToggleBtn.innerHTML = '<span style="font-size:20px;line-height:1">✕</span>';
       }
     });
 
     // Chat close callback — set flag to prevent Enter re-open + reset toggle icon
     this.ui.onChatClose(() => {
       this.chatJustClosed = true;
-      chatToggleBtn.textContent = '💬';
+      chatToggleBtn.innerHTML = chatIconSvg;
     });
 
     // Mobile chat send button

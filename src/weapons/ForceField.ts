@@ -4,14 +4,15 @@ import { Enemy } from '../entities/Enemy';
 import { distance } from '../utils/math';
 
 /*
-  Lv1: 8 dmg, 60 radius, 0.5s tick, knockback 80
+  ForceField: slows enemies in range + periodic damage
+  Lv1: 8 dmg, 60 radius, 0.5s tick, 30% slow
   Lv2: +damage      → 12 dmg
   Lv3: +radius      → 75 radius
-  Lv4: +knockback   → 120
+  Lv4: +slow effect (visual upgrade)
   Lv5: +damage      → 18 dmg
   Lv6: +radius      → 90 radius
   Lv7: -tick        → 0.35s tick
-  Lv8: EVOLVE → "Event Horizon": massive radius, enemies inside are slowed 50%
+  Lv8: EVOLVE → "Event Horizon": 140 radius, 50% slow
 */
 
 interface LevelData {
@@ -22,21 +23,21 @@ interface LevelData {
 }
 
 const LEVEL_TABLE: LevelData[] = [
-  { damage: 8, radius: 60, tickRate: 0.5, knockback: 80 },
-  { damage: 8, radius: 60, tickRate: 0.5, knockback: 80 },
-  { damage: 12, radius: 60, tickRate: 0.5, knockback: 80 },
-  { damage: 12, radius: 75, tickRate: 0.5, knockback: 80 },
-  { damage: 12, radius: 75, tickRate: 0.5, knockback: 120 },
-  { damage: 18, radius: 75, tickRate: 0.5, knockback: 120 },
-  { damage: 18, radius: 90, tickRate: 0.5, knockback: 120 },
-  { damage: 18, radius: 90, tickRate: 0.35, knockback: 120 },
-  { damage: 22, radius: 140, tickRate: 0.3, knockback: 150 }, // evolved
+  { damage: 8, radius: 60, tickRate: 0.5, knockback: 0 },
+  { damage: 8, radius: 60, tickRate: 0.5, knockback: 0 },
+  { damage: 12, radius: 60, tickRate: 0.5, knockback: 0 },
+  { damage: 12, radius: 75, tickRate: 0.5, knockback: 0 },
+  { damage: 15, radius: 75, tickRate: 0.5, knockback: 0 },
+  { damage: 18, radius: 75, tickRate: 0.5, knockback: 0 },
+  { damage: 18, radius: 90, tickRate: 0.5, knockback: 0 },
+  { damage: 18, radius: 90, tickRate: 0.35, knockback: 0 },
+  { damage: 22, radius: 140, tickRate: 0.3, knockback: 0 }, // evolved
 ];
 
 const UPGRADE_DESCRIPTIONS: { stat: string; label: string }[] = [
   { stat: 'damage', label: 'upgrade.damage' },
   { stat: 'radius', label: 'upgrade.radius' },
-  { stat: 'speed', label: 'upgrade.speed' },    // knockback as "speed"
+  { stat: 'damage', label: 'upgrade.damage' },
   { stat: 'damage', label: 'upgrade.damage' },
   { stat: 'radius', label: 'upgrade.radius' },
   { stat: 'cooldown', label: 'upgrade.cooldown' },
@@ -97,20 +98,14 @@ export class ForceField extends WeaponBase {
     this.container.x = px;
     this.container.y = py;
 
-    // Knockback & slow enemies in range (solo only — multiplayer enemies are server-authoritative)
+    // Slow enemies in range (solo only — multiplayer uses server-side slow)
     for (const enemy of enemies) {
       if (enemy.dead) continue;
       const dist = distance(px, py, enemy.x, enemy.y);
-      if (dist < d.radius && dist > 1 && enemy.serverId < 0) {
-        const dx = enemy.x - px;
-        const dy = enemy.y - py;
-        const pushStr = d.knockback * dt / dist;
-        enemy.x += dx * pushStr;
-        enemy.y += dy * pushStr;
-
-        if (this.evolved) {
-          enemy.speed = Math.max(20, enemy.speed * 0.98);
-        }
+      if (dist < d.radius && enemy.serverId < 0) {
+        // Apply slow: 30% reduction (evolved: 50%)
+        const slowFactor = this.evolved ? 0.5 : 0.7;
+        enemy.speed = Math.min(enemy.speed, enemy.baseSpeed * slowFactor);
       }
     }
 

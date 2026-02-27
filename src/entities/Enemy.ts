@@ -72,7 +72,7 @@ export class Enemy {
 
   private visual: Graphics;
   private flashTimer = 0;
-  private baseSpeed: number;
+  public baseSpeed: number;
 
   constructor(x: number, y: number, def: EnemyDef, difficultyMult: number) {
     this.x = x;
@@ -165,6 +165,11 @@ export class Enemy {
     this.container.x = this.x;
     this.container.y = this.y;
     this.container.rotation = Math.atan2(dy, dx);
+
+    // Recover speed when not being slowed (ForceField sets speed each frame while in range)
+    if (this.speed < this.baseSpeed) {
+      this.speed = Math.min(this.baseSpeed, this.speed + this.baseSpeed * 2 * dt);
+    }
 
     if (this.damageCooldown > 0) this.damageCooldown -= dt;
 

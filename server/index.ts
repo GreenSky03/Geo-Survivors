@@ -22,6 +22,11 @@ const ENEMY_SYNC_MS = 200;
 const SCOREBOARD_MS = 2000;
 const MAX_ENEMIES = 120;
 
+// ForceField radius by level (index 0 = unused, 1-8 = levels)
+const FF_RADIUS = [0, 60, 60, 60, 75, 75, 75, 90, 90];
+const FF_RADIUS_EVOLVED = 140;
+const FF_SLOW_FACTOR = 0.7;  // 30% slow when inside ForceField
+
 // Wave event interval (seconds)
 const WAVE_EVENT_INTERVAL = 60;
 // Elite spawn chance (per spawn cycle)
@@ -366,8 +371,32 @@ function updateEnemies(room: Room): void {
 
   const centroid = getPlayerCentroid(room);
 
+  // Collect ForceField players for slow effect
+  const ffPlayers: { x: number; y: number; radius: number }[] = [];
+  for (const p of players) {
+    if (!p.data.weapons) continue;
+    const ff = p.data.weapons.find(w => w.id === 'forcefield');
+    if (!ff) continue;
+    const r = ff.evolved ? FF_RADIUS_EVOLVED : (FF_RADIUS[ff.level] ?? 60);
+    ffPlayers.push({ x: p.data.x, y: p.data.y, radius: r });
+  }
+
   for (const enemy of room.enemies.values()) {
     if (enemy.dead) continue;
+
+    // ForceField slow: reduce speed if enemy is inside any player's ForceField
+    let inForceField = false;
+    for (const ff of ffPlayers) {
+      const fdx = enemy.x - ff.x;
+      const fdy = enemy.y - ff.y;
+      if (fdx * fdx + fdy * fdy < ff.radius * ff.radius) {
+        inForceField = true;
+        break;
+      }
+    }
+    if (inForceField) {
+      enemy.speed = Math.min(enemy.speed, enemy.baseSpeed * FF_SLOW_FACTOR);
+    }
 
     // Find target based on targeting mode
     let targetX = 0, targetY = 0;
@@ -447,9 +476,9 @@ function updateEnemies(room: Room): void {
     enemy.x = clamped.x;
     enemy.y = clamped.y;
 
-    // Restore speed if it was slowed (ForceField slow recovery)
-    if (enemy.speed < enemy.baseSpeed) {
-      enemy.speed = Math.min(enemy.baseSpeed, enemy.speed + enemy.baseSpeed * 0.02 * TICK_S);
+    // Restore speed if slowed and NOT inside a ForceField (quick recovery outside)
+    if (!inForceField && enemy.speed < enemy.baseSpeed) {
+      enemy.speed = Math.min(enemy.baseSpeed, enemy.speed + enemy.baseSpeed * 2 * TICK_S);
     }
 
     // Update boss position in boss data
@@ -475,7 +504,7 @@ function updateEnemies(room: Room): void {
       const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
       const def = ENEMY_DEFS[enemy.type];
       const enemyRadius = enemy.isElite ? (def?.radius ?? 12) * 1.5 : (def?.radius ?? 12);
-      if (pdist < enemyRadius + 16) {
+      if (pdist < enemyRadius + 12) {
         enemy.damageCooldowns.set(p.data.id, 0.8);
         const baseDmg = def ? def.damage : 10;
         const colMins = room.serverTime / 60;
