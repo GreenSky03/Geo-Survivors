@@ -42,6 +42,7 @@ export class UI {
   private onQuitCallback: (() => void) | null = null;
   private onVolumeCallback: ((v: number) => void) | null = null;
   private onChatSendCallback: ((msg: string) => void) | null = null;
+  private onChatCloseCallback: (() => void) | null = null;
 
   constructor() {
     this.hpFill = document.getElementById('hp-fill')!;
@@ -428,10 +429,16 @@ export class UI {
     document.getElementById('ping-display')!.style.display = show ? 'block' : 'none';
     document.getElementById('ping-hint')!.style.display = show ? 'block' : 'none';
     document.getElementById('chat-panel')!.style.display = show ? 'block' : 'none';
-    // Show chat toggle button on touch devices only
+    // Show chat/ping buttons on touch devices only
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     document.getElementById('chat-toggle-btn')!.style.display =
       show && isTouchDevice ? 'flex' : 'none';
+    document.getElementById('ping-btn')!.style.display =
+      show && isTouchDevice ? 'flex' : 'none';
+    // Hide keyboard-only hint on touch devices
+    if (isTouchDevice) {
+      document.getElementById('ping-hint')!.style.display = 'none';
+    }
   }
 
   updatePingDisplay(ms: number): void {
@@ -547,10 +554,14 @@ export class UI {
     this.onChatSendCallback = cb;
   }
 
+  onChatClose(cb: () => void): void {
+    this.onChatCloseCallback = cb;
+  }
+
   openChatInput(): void {
     const row = document.getElementById('chat-input-row')!;
     const input = document.getElementById('chat-input') as HTMLInputElement;
-    row.style.display = 'block';
+    row.style.display = 'flex';
     input.value = '';
     input.focus();
   }
@@ -560,6 +571,7 @@ export class UI {
     const input = document.getElementById('chat-input') as HTMLInputElement;
     row.style.display = 'none';
     input.blur();
+    if (this.onChatCloseCallback) this.onChatCloseCallback();
   }
 
   isChatInputFocused(): boolean {

@@ -181,16 +181,30 @@
     @keyframes chatFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 0.8; } }
     #chat-input-row {
       display: none; pointer-events: auto;
+      flex-direction: row; align-items: center; gap: 4px;
     }
     #chat-input {
-      width: 100%; padding: 6px 10px; font-size: 12px;
+      flex: 1; padding: 6px 10px; font-size: 12px;
       background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2);
       color: #fff; border-radius: 4px; outline: none;
     }
     #chat-input:focus { border-color: #00e6b0; }
     #chat-input::placeholder { color: rgba(255,255,255,0.3); }
+    #chat-send-btn {
+      display: none; padding: 6px 10px; font-size: 14px;
+      background: rgba(0, 230, 176, 0.3); border: 1px solid rgba(0, 230, 176, 0.5);
+      color: #fff; border-radius: 4px; cursor: pointer;
+    }
     #chat-toggle-btn {
       position: absolute; bottom: 80px; right: 80px;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; font-size: 18px; display: none;
+      align-items: center; justify-content: center;
+      cursor: pointer; pointer-events: auto; z-index: 201;
+    }
+    #ping-btn {
+      position: absolute; bottom: 130px; right: 80px;
       width: 44px; height: 44px; border-radius: 50%;
       background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
       color: #fff; font-size: 18px; display: none;
@@ -377,6 +391,7 @@
       /* Chat panel */
       #chat-panel { width: 220px; bottom: 240px; }
       .chat-msg { font-size: 11px; }
+      #chat-send-btn { display: block; }
 
       /* Ping hint */
       #ping-hint { font-size: 9px; bottom: 200px; }
@@ -422,10 +437,12 @@
     <div id="chat-panel">
       <div id="chat-messages"></div>
       <div id="chat-input-row">
-        <input type="text" id="chat-input" placeholder="Type a message..." maxlength="100" />
+        <input type="text" id="chat-input" placeholder="Type a message..." maxlength="100" enterkeyhint="send" />
+        <button id="chat-send-btn">➤</button>
       </div>
     </div>
     <button id="chat-toggle-btn">💬</button>
+    <button id="ping-btn">📍</button>
     <div id="boss-hp-bar">
       <div class="bar-container"><div id="boss-hp-fill"></div></div>
       <div id="boss-hp-label">BOSS</div>

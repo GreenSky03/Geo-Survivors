@@ -114,6 +114,9 @@ export class Game {
   // Ping system
   private activePings: { x: number; y: number; team: string; name: string; timer: number }[] = [];
 
+  // Flag to prevent chat re-open after Enter send
+  private chatJustClosed = false;
+
   // Team proximity buff
   private teamBuffActive = false;
   private teamBuffMultiplier = 1;
@@ -175,6 +178,11 @@ export class Game {
       // Chat: open input (multiplayer, Enter when not focused)
       if (this.isMultiplayer && this.gameActive && this.started) {
         if (e.code === 'Enter' && !this.ui.isChatInputFocused()) {
+          // Prevent re-opening chat immediately after Enter-to-send closed it
+          if (this.chatJustClosed) {
+            this.chatJustClosed = false;
+            return;
+          }
           this.ui.openChatInput();
           e.preventDefault();
           return;
@@ -208,14 +216,36 @@ export class Game {
       if (this.net.connected) this.net.sendChat(msg);
     });
 
-    // Mobile chat toggle button
-    document.getElementById('chat-toggle-btn')!.addEventListener('click', () => {
+    // Mobile chat toggle button (💬 to open, ✕ to close)
+    const chatToggleBtn = document.getElementById('chat-toggle-btn')!;
+    chatToggleBtn.addEventListener('click', () => {
       if (this.ui.isChatInputFocused()) {
-        const msg = this.ui.getChatInputValue();
-        if (msg && this.net.connected) this.net.sendChat(msg);
         this.ui.closeChatInput();
       } else {
         this.ui.openChatInput();
+        chatToggleBtn.textContent = '✕';
+      }
+    });
+
+    // Chat close callback — set flag to prevent Enter re-open + reset toggle icon
+    this.ui.onChatClose(() => {
+      this.chatJustClosed = true;
+      chatToggleBtn.textContent = '💬';
+    });
+
+    // Mobile chat send button
+    document.getElementById('chat-send-btn')!.addEventListener('click', () => {
+      const msg = this.ui.getChatInputValue();
+      if (msg && this.net.connected) this.net.sendChat(msg);
+      this.ui.closeChatInput();
+    });
+
+    // Mobile ping button
+    document.getElementById('ping-btn')!.addEventListener('click', () => {
+      if (this.isMultiplayer && this.gameActive && this.started && this.net.connected) {
+        if (this.ui.isChatInputFocused()) return;
+        this.net.sendPing(this.player.x, this.player.y);
+        this.activePings.push({ x: this.player.x, y: this.player.y, team: this.net.myTeam, name: 'You', timer: 4 });
       }
     });
 
