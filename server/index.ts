@@ -555,7 +555,7 @@ const MIME_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
 };
 
-const DIST_DIR = path.resolve(import.meta.dirname ?? '.', '..', 'dist');
+const DIST_DIR = path.resolve(process.cwd(), 'dist');
 
 // ─── HTTP + WebSocket Server ────────────────
 const server = http.createServer((req, res) => {
