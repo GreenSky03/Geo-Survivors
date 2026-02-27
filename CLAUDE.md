@@ -95,8 +95,10 @@ index.html               # HTML + CSS (UI 오버레이)
   - `NetworkManager.sendChat()` → 서버 브로드캐스트 → `UI.addChatMessage()` (HTML escape)
   - `Input.movementBlocked` 플래그로 채팅 중 이동 차단
 - **핑**: G키 + 모바일 핑 버튼(SVG 원형), 같은 팀만 표시 (다른 팀 핑은 무시)
-- **ForceField**: 둔화 효과 (솔로: 30%/evolved 50%, 멀티: 서버에서 동일 적용) + 데미지 틱
-  - 서버: ForceField 가진 플레이어 주변 적 speed = baseSpeed × 0.7, 밖에서 2×baseSpeed/s 복구
+- **ForceField**: 둔화 필드 (솔로: 50%/evolved 70%, 멀티: 서버 50%) + 데미지 틱(0.4~0.2s)
+  - 범위: 80/100/120/180(evolved), 서버 동기화, 슬로우 flags bit2로 클라이언트 전달
+  - 슬로우 시각: 적 파란 틴트(0x6688ff), 필드 밝기 적 수에 따라 증가
+  - 적 glow: radius+2 (body와 거의 일치), Player.radius=12
 - **모바일 반응형 UI**: `@media 768px` (태블릿), `@media 480px` (모바일) — 레벨업 세로 스택, HUD/미니맵/채팅 축소
 
 ## Key Constants
