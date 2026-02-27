@@ -10,22 +10,25 @@
 - **Renderer**: PixiJS 8.16.0 (WebGL, Container/Graphics/Text)
 - **Bundler**: Vite 7.3.1 (dev: port 3000)
 - **Language**: TypeScript (strict)
-- **Server**: WebSocket via `ws` 8.19.0 (port 8080), run with `npx tsx server/index.ts`
+- **Server**: HTTP + WebSocket unified server via `ws` 8.19.0 (port 8080), run with `npx tsx server/index.ts`
 - **Shared types**: `shared/protocol.ts` (C2S/S2C message types, team colors, enemy defs)
+- **Deployment**: Render.com — https://geo-survivors.onrender.com
 
 ## Commands
 
 ```bash
 npx vite                # Dev server (port 3000)
 npx vite build          # Build client to dist/
-npx tsc --noEmit        # Type check (server)
-npx tsx server/index.ts # Run WebSocket server (port 8080)
+npx tsc --noEmit        # Type check
+npx tsx server/index.ts # Unified HTTP+WS server (port 8080, serves dist/ + /ws)
 ```
 
 ## Project Structure
 
 ```
-server/index.ts          # WebSocket 서버 (방/적/보스/PvP/점수)
+server/index.ts          # HTTP+WS 통합 서버 (정적 파일 서빙 + WebSocket 게임 서버)
+.env.development         # 개발용 환경변수 (VITE_WS_URL=ws://localhost:8080/ws)
+.env.example             # 배포용 환경변수 템플릿
 shared/protocol.ts       # 공유 타입 정의 (C2S/S2C 메시지, 팀, 적 정의)
 src/
   main.ts                # 엔트리 포인트 (PixiJS 앱 생성 → Game)
@@ -86,10 +89,11 @@ vite.config.ts           # Vite 설정
 | 점수판 | 2000ms | 팀 점수 + 리더보드 |
 
 ### 연결 흐름
-1. 클라이언트가 `ws://localhost:8080`에 연결
+1. 클라이언트가 WS_URL에 연결 (dev: `ws://localhost:8080/ws`, prod: `wss://{host}/ws`)
 2. `join` 메시지 전송 (이름, 방코드)
 3. 서버가 `welcome` 응답 (ID, 팀, 기존 플레이어/적/보스 목록)
 4. `welcome` 수신 후 `startGame()` 호출 (비동기)
+5. 연결 끊김 시 exponential backoff 재연결 (1s→2s→4s→...max 30s)
 
 ## Completed Phases (2026-02-26)
 
@@ -118,10 +122,38 @@ vite.config.ts           # Vite 설정
 - 킬 로그 UI
 - 적 HP/데미지 플레이어 수 스케일링
 
-### 버그 수정 (2026-02-27)
+### 버그 수정 (2026-02-27 세션 1)
 - ~~적이 플레이어별로 개별 이동~~ → 멀티에서 `enemy.update()` 제거, `lerpToServer()` 만 사용
 - ~~죽인 적이 유령처럼 남음~~ → `takeDamage()`에서 serverId>=0이면 비주얼만, `enemy_death`에서 `!dead` 가드 제거
 - ~~PvP 데미지 불가~~ → 위 두 버그 수정으로 플레이어들이 같은 공간에서 조우하게 됨
+
+### 기능 추가 + 밸런싱 + 배포 (2026-02-27 세션 2)
+
+**Phase 1: 패시브 플레이버 텍스트** (`i18n.ts`)
+- 패시브 5종 이름/설명을 창의적으로 변경 (Iron Constitution, Phantom Step, Gravitational Pull, Vital Surge, Tenacious Vitality)
+
+**Phase 2: 무기 데미지 미보고 버그 수정**
+- ChainLightning: `pendingHits[]` 추가 → `getHits()`가 반환 → Game.ts 히트 루프에서 `enemy_hit` 서버 전송
+- BulletWeapon (evolved beam): `pendingBeamHits[]` 추가 → 동일 방식
+- AreaWeapon: 이미 `getHits()` 내에서 정상 동작 확인 (수정 불필요)
+
+**Phase 3: 사망 페널티 — 완전 초기화** (`Game.ts`, `index.html`, `UI.ts`)
+- 멀티 리스폰 시 무기 전부 제거 → OrbitWeapon만 재지급, 레벨 1, XP 0 초기화
+- "ALL PROGRESS LOST" / "모든 진행 초기화" 경고 텍스트 (i18n 지원)
+
+**Phase 4: 게임 밸런싱**
+- 난이도 곡선: `1 + min*0.4 + (min/10)^1.5` (클라이언트+서버 모두)
+- 속도 패시브 상한: 500
+- 자석 범위 +30 → +50
+- 픽업 드롭률 4% → 6% (heal 2.5%, magnet 1.5%, bomb 2%)
+- 후반 XP 보너스: `amount * (1 + gameTime/300)` — 5분마다 +100%
+
+**Phase 5: 온라인 멀티플레이 배포**
+- WS_URL 환경변수화: `VITE_WS_URL` → fallback `wss://{host}/ws`
+- HTTP+WS 통합 서버: `dist/` 정적 서빙 + `/ws` WebSocket + `/health` 헬스체크
+- `.env.development` + `.env.example` 생성
+- Exponential backoff 재연결 (1s→2s→4s→...max 30s, UI에 시도 횟수 표시)
+- Render.com 배포 완료: https://geo-survivors.onrender.com
 
 ## Pending Bugs (2026-02-27) — 다음 세션에서 수정 필요
 
@@ -177,13 +209,15 @@ if (this.isMultiplayer) {
 - ~~PvP 불가~~ → 적 공유로 자연스러운 조우
 - ~~Charger 떨림~~ → 서버 charging 상태 동기화
 - ~~OrbitWeapon pull 비활성화~~ → 서버 pull_request로 재활성화
+- ~~ChainLightning/beam 멀티 데미지 미보고~~ → pendingHits 패턴으로 getHits() 반환
 
 ## Death/Respawn System (Multiplayer)
 
-- 죽으면 "ELIMINATED" 오버레이 표시 (빨간 펄스 텍스트 + 카운트다운 + 프로그레스바)
+- 죽으면 "ELIMINATED" + "ALL PROGRESS LOST" 오버레이 표시 (빨간 펄스 텍스트 + 카운트다운 + 프로그레스바)
 - 5초 대기 후 안전한 위치에 부활 (적으로부터 가장 먼 곳 8개 후보 중 선택)
 - 부활 시 3초 무적 (깜빡임 이펙트)
-- HTML: `#respawn-overlay` (index.html)
+- **사망 페널티**: 레벨 1, XP 0, 무기 OrbitWeapon만으로 완전 초기화
+- HTML: `#respawn-overlay`, `#death-penalty-text` (index.html)
 - JS: `UI.showRespawnOverlay()`, `updateRespawnTimer()`, `hideRespawnOverlay()`
 
 ## Key Constants
@@ -244,6 +278,18 @@ if (this.isMultiplayer) {
 - `team_scores/leaderboard`: 점수
 - `ping_signal`: x, y, team, playerName (핑 브로드캐스트)
 - `wave_event`: waveNumber, enemyCount (웨이브 이벤트)
+
+## Deployment
+
+- **GitHub**: https://github.com/GreenSky03/Geo-Survivors
+- **Live**: https://geo-survivors.onrender.com (Render.com Free)
+- **Build Command**: `npm install && npx vite build`
+- **Start Command**: `npx tsx server/index.ts`
+- **Port**: `process.env.PORT` (Render 자동 주입) || 8080
+- **WS URL**: 프로덕션에서 `VITE_WS_URL` 미설정 → 자동 `wss://{host}/ws`
+- **Health**: `GET /health` → `{"status":"ok","rooms":N}`
+- **Static**: `dist/` 폴더에서 서빙 (SPA fallback 포함)
+- **주의**: Free 요금제 15분 무활동 시 슬립 → 첫 접속 30초 대기
 
 ## Team System
 4팀: blue(`0x4488ff`), red(`0xff4466`), green(`0x44ff88`), yellow(`0xffcc44`)
