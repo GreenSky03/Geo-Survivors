@@ -87,9 +87,9 @@ export class Enemy {
     this.container = new Container();
     const s = def.scale ?? 1;
 
-    // Glow
+    // Glow (subtle, close to body)
     const glow = new Graphics();
-    this.drawShape(glow, def.shape, (def.radius + 6) * s, def.color, 0.12);
+    this.drawShape(glow, def.shape, (def.radius + 2) * s, def.color, 0.08);
     this.container.addChild(glow);
 
     // Body
@@ -175,7 +175,13 @@ export class Enemy {
 
     if (this.flashTimer > 0) {
       this.flashTimer -= dt;
-      if (this.flashTimer <= 0) this.visual.tint = 0xffffff;
+      if (this.flashTimer <= 0) {
+        // After flash, show slow tint if still slowed, otherwise reset
+        this.visual.tint = this.speed < this.baseSpeed * 0.95 ? 0x6688ff : 0xffffff;
+      }
+    } else {
+      // Slow visual: blue tint when slowed (not during flash)
+      this.visual.tint = this.speed < this.baseSpeed * 0.95 ? 0x6688ff : 0xffffff;
     }
   }
 
@@ -232,7 +238,11 @@ export class Enemy {
     if (this.damageCooldown > 0) this.damageCooldown -= dt;
     if (this.flashTimer > 0) {
       this.flashTimer -= dt;
-      if (this.flashTimer <= 0) this.visual.tint = 0xffffff;
+      if (this.flashTimer <= 0) {
+        this.visual.tint = this.speed < this.baseSpeed * 0.95 ? 0x6688ff : 0xffffff;
+      }
+    } else {
+      this.visual.tint = this.speed < this.baseSpeed * 0.95 ? 0x6688ff : 0xffffff;
     }
   }
 

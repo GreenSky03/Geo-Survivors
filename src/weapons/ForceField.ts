@@ -4,15 +4,15 @@ import { Enemy } from '../entities/Enemy';
 import { distance } from '../utils/math';
 
 /*
-  ForceField: slows enemies in range + periodic damage
-  Lv1: 8 dmg, 60 radius, 0.5s tick, 30% slow
+  ForceField: slows enemies in range + periodic damage + slow visual tint
+  Lv1: 8 dmg, 80 radius, 0.4s tick, 50% slow
   Lv2: +damage      → 12 dmg
-  Lv3: +radius      → 75 radius
-  Lv4: +slow effect (visual upgrade)
+  Lv3: +radius      → 100 radius
+  Lv4: +tick        → 0.35s tick
   Lv5: +damage      → 18 dmg
-  Lv6: +radius      → 90 radius
-  Lv7: -tick        → 0.35s tick
-  Lv8: EVOLVE → "Event Horizon": 140 radius, 50% slow
+  Lv6: +radius      → 120 radius
+  Lv7: -tick        → 0.25s tick
+  Lv8: EVOLVE → "Event Horizon": 180 radius, 70% slow
 */
 
 interface LevelData {
@@ -23,15 +23,15 @@ interface LevelData {
 }
 
 const LEVEL_TABLE: LevelData[] = [
-  { damage: 8, radius: 60, tickRate: 0.5, knockback: 0 },
-  { damage: 8, radius: 60, tickRate: 0.5, knockback: 0 },
-  { damage: 12, radius: 60, tickRate: 0.5, knockback: 0 },
-  { damage: 12, radius: 75, tickRate: 0.5, knockback: 0 },
-  { damage: 15, radius: 75, tickRate: 0.5, knockback: 0 },
-  { damage: 18, radius: 75, tickRate: 0.5, knockback: 0 },
-  { damage: 18, radius: 90, tickRate: 0.5, knockback: 0 },
-  { damage: 18, radius: 90, tickRate: 0.35, knockback: 0 },
-  { damage: 22, radius: 140, tickRate: 0.3, knockback: 0 }, // evolved
+  { damage: 8, radius: 80, tickRate: 0.4, knockback: 0 },
+  { damage: 8, radius: 80, tickRate: 0.4, knockback: 0 },
+  { damage: 12, radius: 80, tickRate: 0.4, knockback: 0 },
+  { damage: 12, radius: 100, tickRate: 0.4, knockback: 0 },
+  { damage: 15, radius: 100, tickRate: 0.35, knockback: 0 },
+  { damage: 18, radius: 100, tickRate: 0.35, knockback: 0 },
+  { damage: 18, radius: 120, tickRate: 0.35, knockback: 0 },
+  { damage: 18, radius: 120, tickRate: 0.25, knockback: 0 },
+  { damage: 25, radius: 180, tickRate: 0.2, knockback: 0 }, // evolved
 ];
 
 const UPGRADE_DESCRIPTIONS: { stat: string; label: string }[] = [
@@ -103,32 +103,41 @@ export class ForceField extends WeaponBase {
       if (enemy.dead) continue;
       const dist = distance(px, py, enemy.x, enemy.y);
       if (dist < d.radius && enemy.serverId < 0) {
-        // Apply slow: 30% reduction (evolved: 50%)
-        const slowFactor = this.evolved ? 0.5 : 0.7;
+        // Apply slow: 50% reduction (evolved: 70%)
+        const slowFactor = this.evolved ? 0.3 : 0.5;
         enemy.speed = Math.min(enemy.speed, enemy.baseSpeed * slowFactor);
       }
     }
 
-    // Draw field
+    // Count enemies being slowed for visual intensity
+    let slowedCount = 0;
+    for (const enemy of enemies) {
+      if (!enemy.dead && distance(px, py, enemy.x, enemy.y) < d.radius) {
+        slowedCount++;
+      }
+    }
+
+    // Draw field — brighter when actively slowing enemies
     this.fieldVisual.clear();
     const breathe = Math.sin(this.pulsePhase) * 0.05 + 0.95;
     const r = d.radius * breathe;
     const color = this.evolved ? 0xcc66ff : 0x66aaff;
+    const activeBoost = Math.min(slowedCount * 0.015, 0.08);
 
     // Outer ring
     this.fieldVisual.circle(0, 0, r);
-    this.fieldVisual.stroke({ width: 2, color, alpha: 0.4 });
+    this.fieldVisual.stroke({ width: this.evolved ? 3 : 2, color, alpha: 0.5 + activeBoost });
     // Fill
     this.fieldVisual.circle(0, 0, r);
-    this.fieldVisual.fill({ color, alpha: this.evolved ? 0.06 : 0.03 });
+    this.fieldVisual.fill({ color, alpha: (this.evolved ? 0.08 : 0.05) + activeBoost });
     // Inner ring
     this.fieldVisual.circle(0, 0, r * 0.7);
-    this.fieldVisual.stroke({ width: 1, color, alpha: 0.15 });
+    this.fieldVisual.stroke({ width: 1, color, alpha: 0.2 });
 
     if (this.evolved) {
-      // Extra ring for evolved
+      // Extra rings for evolved
       this.fieldVisual.circle(0, 0, r * 0.4);
-      this.fieldVisual.stroke({ width: 1, color: 0xaa44ff, alpha: 0.2 });
+      this.fieldVisual.stroke({ width: 1.5, color: 0xaa44ff, alpha: 0.25 });
     }
   }
 

@@ -382,6 +382,7 @@ export class Game {
         const vx = data[i + 5];
         const vy = data[i + 6];
         const isElite = (flags & 2) !== 0;
+        const isSlowed = (flags & 4) !== 0;
 
         const enemy = this.enemyById.get(id);
         if (enemy) {
@@ -396,6 +397,13 @@ export class Game {
           if (isElite && enemy.container.scale.x < 1.5) {
             enemy.container.scale.set(1.5);
             enemy.radius = Math.floor(enemy.radius * 1.5);
+          }
+
+          // Server slow visual: override speed to trigger blue tint in update
+          if (isSlowed) {
+            enemy.speed = enemy.baseSpeed * 0.5;
+          } else {
+            enemy.speed = enemy.baseSpeed;
           }
         }
       }

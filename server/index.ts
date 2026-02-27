@@ -23,9 +23,9 @@ const SCOREBOARD_MS = 2000;
 const MAX_ENEMIES = 120;
 
 // ForceField radius by level (index 0 = unused, 1-8 = levels)
-const FF_RADIUS = [0, 60, 60, 60, 75, 75, 75, 90, 90];
-const FF_RADIUS_EVOLVED = 140;
-const FF_SLOW_FACTOR = 0.7;  // 30% slow when inside ForceField
+const FF_RADIUS = [0, 80, 80, 80, 100, 100, 100, 120, 120];
+const FF_RADIUS_EVOLVED = 180;
+const FF_SLOW_FACTOR = 0.5;  // 50% slow when inside ForceField
 
 // Wave event interval (seconds)
 const WAVE_EVENT_INTERVAL = 60;
@@ -526,8 +526,9 @@ function buildEnemySyncData(room: Room): number[] {
   const data: number[] = [];
   for (const e of room.enemies.values()) {
     if (e.dead) continue;
-    // flags: bit0 = isCharging, bit1 = isElite
-    const flags = (e.isCharging ? 1 : 0) | (e.isElite ? 2 : 0);
+    // flags: bit0 = isCharging, bit1 = isElite, bit2 = isSlowed
+    const isSlowed = e.speed < e.baseSpeed * 0.95;
+    const flags = (e.isCharging ? 1 : 0) | (e.isElite ? 2 : 0) | (isSlowed ? 4 : 0);
     data.push(e.id, Math.round(e.x), Math.round(e.y), e.hp, flags,
               Math.round(e.vx), Math.round(e.vy));
   }
