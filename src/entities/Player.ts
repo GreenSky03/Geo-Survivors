@@ -6,7 +6,7 @@ export class Player {
   public container: Container;
   public x = 0;
   public y = 0;
-  public radius = 12;
+  public radius = 10;
   public speed = 280;
   public maxHp = 100;
   public hp = 100;

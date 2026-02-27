@@ -87,9 +87,9 @@ export class Enemy {
     this.container = new Container();
     const s = def.scale ?? 1;
 
-    // Glow (subtle, close to body)
+    // Glow
     const glow = new Graphics();
-    this.drawShape(glow, def.shape, (def.radius + 2) * s, def.color, 0.08);
+    this.drawShape(glow, def.shape, (def.radius + 6) * s, def.color, 0.12);
     this.container.addChild(glow);
 
     // Body

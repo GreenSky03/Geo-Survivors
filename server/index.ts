@@ -504,7 +504,7 @@ function updateEnemies(room: Room): void {
       const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
       const def = ENEMY_DEFS[enemy.type];
       const enemyRadius = enemy.isElite ? (def?.radius ?? 12) * 1.5 : (def?.radius ?? 12);
-      if (pdist < enemyRadius + 12) {
+      if (pdist < enemyRadius + 10) {
         enemy.damageCooldowns.set(p.data.id, 0.8);
         const baseDmg = def ? def.damage : 10;
         const colMins = room.serverTime / 60;
