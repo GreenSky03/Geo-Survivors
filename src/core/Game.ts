@@ -17,7 +17,7 @@ import { SoundManager } from '../systems/SoundManager';
 import { Trail } from '../systems/Trail';
 import { NetworkManager } from '../net/NetworkManager';
 import { UI } from '../ui/UI';
-import { randomAngle, distance, lerp } from '../utils/math';
+import { randomAngle, distance } from '../utils/math';
 import type { Team, PlayerData, BossData, ServerEnemy, WeaponSyncData } from '../../shared/protocol';
 import { TEAM_COLORS, MAP_HALF_W, MAP_HALF_H } from '../../shared/protocol';
 
@@ -326,8 +326,8 @@ export class Game {
           enemy.serverX = sx;
           enemy.serverY = sy;
           enemy.hp = hp;
-          enemy.serverVx = lerp(enemy.serverVx, vx, 0.4);
-          enemy.serverVy = lerp(enemy.serverVy, vy, 0.4);
+          enemy.serverVx = vx;
+          enemy.serverVy = vy;
           enemy.lastSyncTime = Date.now();
 
           // Elite visual scaling

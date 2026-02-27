@@ -193,43 +193,36 @@ export class Enemy {
     this.flashTimer = 0.08;
   }
 
-  /** Dead reckoning: predict position from server velocity, correct toward server snapshot */
+  /** Smooth position-only interpolation toward server snapshot (no dead reckoning) */
   lerpToServer(dt: number): void {
-    // Predict where the server enemy should be now
-    const elapsed = (Date.now() - this.lastSyncTime) / 1000;
-    const predictedX = this.serverX + this.serverVx * elapsed;
-    const predictedY = this.serverY + this.serverVy * elapsed;
-
-    const dx = predictedX - this.x;
-    const dy = predictedY - this.y;
+    const dx = this.serverX - this.x;
+    const dy = this.serverY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist > 300) {
-      // Snap if too far off
-      this.x = predictedX;
-      this.y = predictedY;
+    if (dist > 400) {
+      // Snap if way too far
+      this.x = this.serverX;
+      this.y = this.serverY;
     } else if (dist > 1) {
-      // Linear interpolation toward predicted position
-      const moveSpeed = Math.max(Math.sqrt(this.serverVx * this.serverVx + this.serverVy * this.serverVy), 150);
-      const step = moveSpeed * dt;
-      if (step >= dist) {
-        this.x = predictedX;
-        this.y = predictedY;
-      } else {
-        this.x += (dx / dist) * step;
-        this.y += (dy / dist) * step;
-      }
+      // Adaptive lerp: faster when further away, slower when close
+      // At 200ms sync interval, factor ~8-12 gives smooth catch-up
+      const factor = Math.min(dist < 30 ? 8 : 12, dist * 0.1);
+      const t = 1 - Math.exp(-factor * dt);
+      this.x += dx * t;
+      this.y += dy * t;
     }
 
     this.container.x = this.x;
     this.container.y = this.y;
 
-    // Face direction of movement (use velocity if available, else use delta)
-    if (this.serverVx !== 0 || this.serverVy !== 0) {
-      this.container.rotation = Math.atan2(this.serverVy, this.serverVx);
-    } else if (dist > 1) {
-      this.container.rotation = Math.atan2(dy, dx);
-    }
+    // Face direction: blend toward velocity direction for smooth rotation
+    const targetRot = (this.serverVx !== 0 || this.serverVy !== 0)
+      ? Math.atan2(this.serverVy, this.serverVx)
+      : (dist > 1 ? Math.atan2(dy, dx) : this.container.rotation);
+    let rotDiff = targetRot - this.container.rotation;
+    while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+    while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+    this.container.rotation += rotDiff * Math.min(1, 8 * dt);
 
     if (this.damageCooldown > 0) this.damageCooldown -= dt;
     if (this.flashTimer > 0) {
