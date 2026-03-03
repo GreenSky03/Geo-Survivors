@@ -131,7 +131,7 @@ export class BulletWeapon extends WeaponBase {
     this.fireTimer -= dt;
 
     if (this.fireTimer <= 0 && enemies.length > 0) {
-      this.fireTimer = d.cooldown;
+      this.fireTimer = d.cooldown * this.cooldownMultiplier;
       const sorted = enemies
         .filter(e => !e.dead)
         .sort((a, b) => distance(px, py, a.x, a.y) - distance(px, py, b.x, b.y));

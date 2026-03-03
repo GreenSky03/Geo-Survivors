@@ -23,6 +23,11 @@ export abstract class WeaponBase {
   public level = 1;
   public evolved = false;
 
+  /** Relic-driven multipliers (set by Game.ts each frame) */
+  public damageMultiplier = 1;
+  public cooldownMultiplier = 1;
+  public areaMultiplier = 1;
+
   constructor() {
     this.container = new Container();
   }

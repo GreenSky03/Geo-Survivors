@@ -28,6 +28,7 @@ import { AchievementChecker, getDailyChallenges, getTodayDateStr, type GameRunSt
 import { NetworkManager } from '../net/NetworkManager';
 import { UI } from '../ui/UI';
 import { t } from '../systems/i18n';
+import { RelicSystem, RELIC_DEFS } from '../systems/RelicSystem';
 import { randomAngle, distance } from '../utils/math';
 import type { Team, PlayerData, BossData, ServerEnemy, WeaponSyncData } from '../../shared/protocol';
 import { TEAM_COLORS, MAP_HALF_W, MAP_HALF_H } from '../../shared/protocol';
@@ -153,9 +154,29 @@ export class Game {
   private bossKillsThisGame = 0;
   private evolutionsThisGame = 0;
 
+  // Relic system (run-scoped)
+  private relicSystem = new RelicSystem();
+
+  // Combo system
+  private comboCount = 0;
+  private comboTimer = 0;
+  private maxCombo = 0;
+
+  // Tutorial
+  private tutorialStep = -1; // -1 = inactive
+  private tutorialActive = false;
+  private tutorialMoveDistance = 0;
+
+  // Spectate
+  private spectating = false;
+  private spectateTargetId = '';
+
+  // Emote
+  private emoteRadialOpen = false;
+
   // Mini-boss & Event Wave (solo)
   private miniBossTimer = 90;
-  private eventWaveTimer = 120;
+  private eventWaveTimer = 60;
   private activeEvent: { type: string; timer: number } | null = null;
 
   // Boss attack system (solo)
@@ -235,6 +256,27 @@ export class Game {
         if (this.ui.isChatInputFocused()) return; // Don't ping while chatting
         this.net.sendPing(this.player.x, this.player.y);
         this.activePings.push({ x: this.player.x, y: this.player.y, team: this.net.myTeam, name: 'You', timer: 4 });
+      }
+
+      // Emote toggle (E key)
+      if (e.code === 'KeyE' && this.isMultiplayer && this.gameActive && this.started && this.net.connected) {
+        if (this.ui.isChatInputFocused()) return;
+        if (this.ui.isEmoteRadialOpen()) {
+          this.ui.hideEmoteRadial();
+        } else {
+          this.ui.showEmoteRadial((emoteId) => {
+            this.net.sendEmote(emoteId);
+          });
+        }
+      }
+
+      // Spectate cycle (left/right arrow or A/D while spectating)
+      if (this.spectating && this.isMultiplayer) {
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+          this.net.sendSpectateCycle('next');
+        } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+          this.net.sendSpectateCycle('prev');
+        }
       }
     });
 
@@ -321,6 +363,13 @@ export class Game {
       this.ui.showShop(this.meta);
     });
 
+    // Stats button
+    document.getElementById('stats-btn')!.addEventListener('click', () => {
+      this.sound.init();
+      this.sound.playButtonClick();
+      this.ui.showStats(this.meta.getRunHistory());
+    });
+
     // Achievement button
     this.ui.onAchievementClick(() => {
       this.sound.init();
@@ -373,6 +422,37 @@ export class Game {
       this.ui.showCharacterSelect(this.meta);
     });
 
+    // Spectate buttons
+    document.getElementById('spectate-death-btn')!.addEventListener('click', () => {
+      if (this.isMultiplayer && this.net.connected) {
+        this.net.sendSpectate();
+      }
+    });
+    document.getElementById('spectate-prev-btn')!.addEventListener('click', () => {
+      if (this.spectating) this.net.sendSpectateCycle('prev');
+    });
+    document.getElementById('spectate-next-btn')!.addEventListener('click', () => {
+      if (this.spectating) this.net.sendSpectateCycle('next');
+    });
+    document.getElementById('spectate-exit-btn')!.addEventListener('click', () => {
+      this.spectating = false;
+      this.spectateTargetId = '';
+      this.ui.hideSpectateBanner();
+    });
+
+    // Tutorial skip button
+    this.ui.onTutorialSkip(() => {
+      this.tutorialActive = false;
+      this.tutorialStep = -1;
+      this.ui.hideTutorial();
+      localStorage.setItem('geo_tutorial_done', '1');
+    });
+
+    // Stats button
+    document.getElementById('stats-back-btn')!.addEventListener('click', () => {
+      this.ui.hideStats();
+    });
+
     this.setupTitleUI();
 
     this.ui.showTitle();
@@ -419,8 +499,10 @@ export class Game {
     });
   }
 
+  private partyRoomCode = '';
+
   private connectMultiplayer(): void {
-    this.net.connect(WS_URL, this.playerName);
+    this.net.connect(WS_URL, this.playerName, this.partyRoomCode || undefined);
   }
 
   private setupNetworkHandlers(): void {
@@ -567,6 +649,7 @@ export class Game {
           this.kills++;
           this.ui.updateKills(this.kills);
           this.checkMilestone();
+          this.incrementCombo();
         }
 
         this.world.removeChild(enemy.container);
@@ -755,6 +838,33 @@ export class Game {
       this.ui.showPartyError(data.reason);
     });
 
+    this.net.on('party_game_start', (data) => {
+      this.partyRoomCode = data.roomCode;
+      this.ui.hideParty();
+      this.ui.showCharacterSelect(this.meta);
+    });
+
+    // ─── Spectate Events ──────────────────
+    this.net.on('spectate_start', (data) => {
+      this.spectating = true;
+      this.spectateTargetId = data.targetId;
+      this.ui.showSpectateBanner(data.targetName);
+    });
+
+    this.net.on('spectate_end', () => {
+      this.spectating = false;
+      this.spectateTargetId = '';
+      this.ui.hideSpectateBanner();
+    });
+
+    // ─── Emote Events ─────────────────────
+    this.net.on('player_emote', (data) => {
+      const rp = this.remotePlayers.get(data.playerId);
+      if (rp) {
+        rp.showEmote(data.emoteId);
+      }
+    });
+
     this.net.on('disconnected', () => {
       const attempt = this.net.reconnectCount;
       this.ui.showConnectionStatus(attempt > 0
@@ -920,8 +1030,12 @@ export class Game {
 
     this.bossKillsThisGame = 0;
     this.evolutionsThisGame = 0;
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.maxCombo = 0;
+    this.relicSystem.reset();
     this.miniBossTimer = 90;
-    this.eventWaveTimer = 120;
+    this.eventWaveTimer = 60;
     this.activeEvent = null;
 
     this.player = new Player(this.input);
@@ -982,6 +1096,14 @@ export class Game {
     this.ui.updateWeaponHud(this.weapons);
     this.ui.updateHighscore(this.bestTime);
     this.input.showTouchControls(true);
+
+    // Start tutorial for first-time players
+    if (!localStorage.getItem('geo_tutorial_done') && !this.isMultiplayer) {
+      this.tutorialActive = true;
+      this.tutorialStep = 0;
+      this.tutorialMoveDistance = 0;
+      this.ui.showTutorialStep(t('tutorial.move'));
+    }
   }
 
   private update(dt: number): void {
@@ -1012,8 +1134,34 @@ export class Game {
       this.ui.updateHp(this.player.hp, this.player.maxHp);
     }
 
+    // Tutorial progression
+    if (this.tutorialActive) {
+      if (this.tutorialStep === 0 && isMoving) {
+        this.tutorialMoveDistance += Math.abs(this.player.x - prevX) + Math.abs(this.player.y - prevY);
+        if (this.tutorialMoveDistance > 50) {
+          this.tutorialStep = 1;
+          this.ui.showTutorialStep(t('tutorial.weapon'));
+        }
+      } else if (this.tutorialStep === 1 && this.gameTime > 3) {
+        this.tutorialStep = 2;
+        this.ui.showTutorialStep(t('tutorial.xp'));
+      }
+      // Steps 2→3 and completion handled in addXp and showLevelUp
+    }
+
     this.trail.update(dt, this.player.x, this.player.y, isMoving);
-    this.camera.follow(this.player.x, this.player.y, 0.08);
+
+    // Camera: follow spectate target or player
+    if (this.spectating && this.spectateTargetId) {
+      const target = this.remotePlayers.get(this.spectateTargetId);
+      if (target) {
+        this.camera.follow(target.targetX, target.targetY, 0.08);
+      } else {
+        this.camera.follow(this.player.x, this.player.y, 0.08);
+      }
+    } else {
+      this.camera.follow(this.player.x, this.player.y, 0.08);
+    }
     this.camera.apply();
     this.screenShake.update(dt, this.world);
     this.drawGrid();
@@ -1233,6 +1381,9 @@ export class Game {
       }
     }
 
+    // ─── Relic multipliers ────────────────────
+    const mults = this.relicSystem.computeMultipliers();
+
     // ─── SOLO: enemy collision damage (in multi, server sends pvp_damage) ───
     if (!this.isMultiplayer) {
       for (const enemy of this.enemies) {
@@ -1247,6 +1398,14 @@ export class Game {
             this.screenShake.trigger(6);
             this.sound.playPlayerHit();
             this.particles.spark(this.player.x, this.player.y, 0xff4466);
+
+            // Thorns: reflect damage back to enemy
+            if (mults.thornsPercent > 0) {
+              const thornsDmg = Math.max(1, Math.floor(reducedDmg * mults.thornsPercent));
+              enemy.takeDamage(thornsDmg);
+              this.particles.spark(enemy.x, enemy.y, 0xff8844);
+              this.damageNumbers.spawn(enemy.x, enemy.y, thornsDmg, 0xff8844);
+            }
           }
         }
       }
@@ -1261,17 +1420,36 @@ export class Game {
       }
     }
 
+    // Apply relic speed/magnet/regen bonuses (recalc each frame for stack changes)
+    // Note: base stats set in startGame, relics add on top
+    // Regen bonus from relics
+    if (mults.regenBonus > 0 && this.player.alive && this.player.hp < this.player.maxHp) {
+      this.player.heal(Math.ceil(mults.regenBonus * dt));
+      this.ui.updateHp(this.player.hp, this.player.maxHp);
+    }
+
+    // Update weapon multipliers from relics
+    for (const weapon of this.weapons) {
+      weapon.damageMultiplier = mults.damageMultiplier;
+      weapon.cooldownMultiplier = mults.cooldownMultiplier;
+      weapon.areaMultiplier = mults.areaMultiplier;
+    }
+
+    // Last Stand check
+    const lastStandActive = mults.lastStandDamageBonus > 0 && this.player.hp <= this.player.maxHp * 0.3;
+    const finalDamageMultiplier = mults.damageMultiplier * (lastStandActive ? (1 + mults.lastStandDamageBonus) : 1);
+
     // ─── Weapons ─────────────────────────────
     const playerAlive = this.player.alive;
     for (const weapon of this.weapons) {
       if (!playerAlive) break;
       weapon.update(dt, this.player.x, this.player.y, this.enemies);
       const hits = weapon.getHits(this.enemies);
-      const baseDmg = weapon.currentDamage;
+      const baseDmg = Math.floor(weapon.currentDamage * finalDamageMultiplier);
 
       for (const enemy of hits) {
-        const isCrit = Math.random() < 0.1;
-        const displayDmg = isCrit ? baseDmg * 2 : baseDmg;
+        const isCrit = Math.random() < mults.critChance;
+        const displayDmg = isCrit ? Math.floor(baseDmg * mults.critDamage) : baseDmg;
 
         if (this.isMultiplayer) {
           // Report hit to server; getHits already applied local takeDamage for prediction
@@ -1368,6 +1546,15 @@ export class Game {
           this.kills++;
           this.ui.updateKills(this.kills);
           this.checkMilestone();
+          this.incrementCombo();
+
+          // Lifesteal from relic
+          if (mults.lifestealFraction > 0 && this.player.alive) {
+            const healAmt = Math.max(1, Math.floor(e.damage * mults.lifestealFraction * 10));
+            this.player.heal(healAmt);
+            this.ui.updateHp(this.player.hp, this.player.maxHp);
+          }
+
           this.enemies.splice(i, 1);
         }
       }
@@ -1400,6 +1587,15 @@ export class Game {
         this.world.removeChild(p.container);
         p.container.destroy();
         this.pickups.splice(i, 1);
+      }
+    }
+
+    // Combo timer decay
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) {
+        this.comboCount = 0;
+        this.ui.updateCombo(0);
       }
     }
 
@@ -1460,6 +1656,9 @@ export class Game {
         this.levelUpPending = 0;
         this.ui.showRespawnOverlay();
         this.ui.updateRespawnTimer(this.respawnDelay, this.respawnDelay);
+        // Show spectate button if other players alive
+        const hasAlive = Array.from(this.remotePlayers.values()).some(rp => rp.alive);
+        document.getElementById('spectate-death-btn')!.style.display = hasAlive ? 'inline-block' : 'none';
       } else {
         // Solo: game over
         this.gameActive = false;
@@ -1472,11 +1671,27 @@ export class Game {
         );
         this.processEndOfGame();
 
+        // Record run history
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        this.meta.addRunRecord({
+          date: dateStr,
+          durationS: this.gameTime,
+          kills: this.kills,
+          level: this.level,
+          maxCombo: this.maxCombo,
+          totalDamage: this.totalDamage,
+          coinsEarned,
+          bossKills: this.bossKillsThisGame,
+          character: this.selectedCharacterId,
+          weaponsFinal: this.weapons.map(w => w.info.id),
+        });
+
         this.ui.showGameOver(
           {
             time: this.gameTime, kills: this.kills, level: this.level,
             totalDamage: this.totalDamage, wave: this.wave, pickups: this.pickupsCollected,
-            coinsEarned,
+            coinsEarned, maxCombo: this.maxCombo,
           },
           () => this.startGame(),
         );
@@ -1542,6 +1757,10 @@ export class Game {
 
         this.ui.updateHp(this.player.hp, this.player.maxHp);
         this.ui.hideRespawnOverlay();
+        // End spectate on respawn
+        this.spectating = false;
+        this.spectateTargetId = '';
+        this.ui.hideSpectateBanner();
         // Respawn effects
         this.particles.burst(safePos.x, safePos.y, 0x44ffaa, 20, 300);
         this.sound.playLevelUp();
@@ -1597,8 +1816,15 @@ export class Game {
 
   private addXp(amount: number): void {
     if (!this.player.alive) return;
-    // Late-game XP bonus: +100% per 5 minutes, plus meta XP multiplier
-    const xpMultiplier = (1 + this.gameTime / 300) * this.meta.getXpMultiplier();
+    // Tutorial: first XP collected
+    if (this.tutorialActive && this.tutorialStep === 2) {
+      this.tutorialStep = 3;
+      this.ui.showTutorialStep(t('tutorial.levelup'));
+    }
+    // Late-game XP bonus: +100% per 5 minutes, plus meta XP multiplier + relic XP multiplier + combo bonus
+    const relicMults = this.relicSystem.computeMultipliers();
+    const comboBonus = 1 + this.comboCount * 0.01;
+    const xpMultiplier = (1 + this.gameTime / 300) * this.meta.getXpMultiplier() * relicMults.xpMultiplier * comboBonus;
     // Gold rush event: 2x XP
     const eventMultiplier = this.activeEvent?.type === 'gold_rush' ? 2 : 1;
     this.xp += Math.floor(amount * xpMultiplier * eventMultiplier);
@@ -1655,11 +1881,18 @@ export class Game {
 
   private showLevelUp(): void {
     this.levelUpShown = true;
+    // Tutorial: complete on first level-up
+    if (this.tutorialActive && this.tutorialStep === 3) {
+      this.tutorialActive = false;
+      this.tutorialStep = -1;
+      this.ui.hideTutorial();
+      localStorage.setItem('geo_tutorial_done', '1');
+    }
     // Solo: pause game during level-up selection
     if (!this.isMultiplayer) {
       this.paused = true;
     }
-    const choices = this.levelUpSystem.generateChoices(this.player, this.weapons);
+    const choices = this.levelUpSystem.generateChoices(this.player, this.weapons, 3, this.relicSystem);
 
     const onChoice = (choice: UpgradeChoice) => {
       const newWeapon = this.levelUpSystem.createWeaponById(choice.id);
@@ -1677,8 +1910,24 @@ export class Game {
           this.sound.playEvolve();
         }
       }
+      // Apply immediate relic effects (glass cannon maxHp, magnet, speed)
+      if (choice.isRelic) {
+        const rm = this.relicSystem.computeMultipliers();
+        // Glass cannon: halve maxHp
+        if (rm.maxHpMultiplier < 1) {
+          const newMax = Math.max(10, Math.floor(this.player.maxHp * rm.maxHpMultiplier));
+          if (newMax < this.player.maxHp) {
+            this.player.maxHp = newMax;
+            this.player.hp = Math.min(this.player.hp, this.player.maxHp);
+          }
+        }
+        // Magnet bonus
+        this.player.magnetRange += rm.magnetBonus;
+        // Speed bonus is multiplicative — handled via update since relics may stack
+      }
       this.ui.updateHp(this.player.hp, this.player.maxHp);
       this.ui.updateWeaponHud(this.weapons);
+      this.updateRelicHud();
       this.levelUpShown = false;
 
       // Process queued level-ups
@@ -1869,6 +2118,27 @@ export class Game {
   // ─── NEW FEATURE METHODS ────────────
   // ═════════════════════════════════════
 
+  private incrementCombo(): void {
+    this.comboCount++;
+    this.comboTimer = 2; // 2 second window
+    if (this.comboCount > this.maxCombo) this.maxCombo = this.comboCount;
+    this.ui.updateCombo(this.comboCount);
+    // Milestone effects
+    if (this.comboCount === 10 || this.comboCount === 25 || this.comboCount === 50 || this.comboCount === 100) {
+      this.screenShake.trigger(4 + this.comboCount * 0.05);
+      this.sound.playLevelUp();
+    }
+  }
+
+  private updateRelicHud(): void {
+    const owned = this.relicSystem.getOwnedRelics();
+    const data = owned.map(r => {
+      const def = RELIC_DEFS.find(d => d.id === r.id);
+      return { id: r.id, count: r.count, icon: def?.icon ?? '?' };
+    });
+    this.ui.updateRelicHud(data);
+  }
+
   private createWeaponByTypeId(typeId: string): WeaponBase {
     switch (typeId) {
       case 'orbit': return new OrbitWeapon();
@@ -1883,10 +2153,12 @@ export class Game {
 
   /** Called at end of game to process meta coins & achievements */
   private processEndOfGame(): void {
-    // Calculate coins
-    const coinsEarned = this.meta.calculateCoins(
+    // Calculate coins (with relic coin multiplier)
+    const relicMults = this.relicSystem.computeMultipliers();
+    const baseCoins = this.meta.calculateCoins(
       this.kills, this.gameTime, this.level, this.bossKillsThisGame,
     );
+    const coinsEarned = Math.floor(baseCoins * relicMults.coinMultiplier);
     this.meta.addCoins(coinsEarned);
     this.meta.recordGame(this.kills, this.bossKillsThisGame);
 
@@ -1938,7 +2210,7 @@ export class Game {
     // Event waves
     this.eventWaveTimer -= dt;
     if (this.eventWaveTimer <= 0) {
-      this.eventWaveTimer = 120;
+      this.eventWaveTimer = 60;
       this.triggerEventWave();
     }
 
@@ -2014,8 +2286,8 @@ export class Game {
 
     switch (event) {
       case 'gold_rush':
-        this.activeEvent = { type: 'gold_rush', timer: 15 };
-        this.ui.showEventBanner(t('event.gold_rush'), 'event-gold', 15);
+        this.activeEvent = { type: 'gold_rush', timer: 30 };
+        this.ui.showEventBanner(t('event.gold_rush'), 'event-gold', 30);
         break;
       case 'elite_invasion':
         this.activeEvent = { type: 'elite_invasion', timer: 20 };
@@ -2046,8 +2318,8 @@ export class Game {
         break;
       }
       case 'healing_rain':
-        this.activeEvent = { type: 'healing_rain', timer: 12 };
-        this.ui.showEventBanner(t('event.healing_rain'), 'event-green', 12);
+        this.activeEvent = { type: 'healing_rain', timer: 20 };
+        this.ui.showEventBanner(t('event.healing_rain'), 'event-green', 20);
         break;
     }
   }

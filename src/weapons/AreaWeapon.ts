@@ -109,7 +109,7 @@ export class AreaWeapon extends WeaponBase {
       if (this.auraVisual) {
         this.auraVisual.clear();
         const breathe = Math.sin(performance.now() / 300) * 0.03 + 0.97;
-        const r = d.radius * breathe;
+        const r = d.radius * this.areaMultiplier * breathe;
         this.auraVisual.circle(0, 0, r);
         this.auraVisual.stroke({ color: 0x44ffaa, alpha: 0.3, width: 2 });
         this.auraVisual.circle(0, 0, r);
@@ -128,14 +128,14 @@ export class AreaWeapon extends WeaponBase {
     this.pulseTimer -= dt;
 
     if (this.pulseTimer <= 0) {
-      this.pulseTimer = d.cooldown;
+      this.pulseTimer = d.cooldown * this.cooldownMultiplier;
       this.pulseAlpha = 0.5;
     }
 
     if (this.pulseAlpha > 0) {
       this.pulseAlpha -= dt * 1.5;
       this.pulseVisual.clear();
-      const r = d.radius * (1 - this.pulseAlpha * 0.5);
+      const r = d.radius * this.areaMultiplier * (1 - this.pulseAlpha * 0.5);
       this.pulseVisual.circle(0, 0, r);
       this.pulseVisual.stroke({ color: 0x44ffaa, alpha: Math.max(0, this.pulseAlpha), width: 2 });
       this.pulseVisual.circle(0, 0, r);
@@ -153,11 +153,11 @@ export class AreaWeapon extends WeaponBase {
     const py = this.container.y;
     const d = this.data;
     if (this.evolved) {
-      return distance(px, py, x, y) < d.radius + radius;
+      return distance(px, py, x, y) < d.radius * this.areaMultiplier + radius;
     }
     // Only hit during pulse
     if (this.pulseAlpha > 0.1) {
-      return distance(px, py, x, y) < d.radius + radius;
+      return distance(px, py, x, y) < d.radius * this.areaMultiplier + radius;
     }
     return false;
   }
@@ -174,7 +174,7 @@ export class AreaWeapon extends WeaponBase {
         const hits: Enemy[] = [];
         for (const enemy of enemies) {
           if (enemy.dead) continue;
-          if (distance(px, py, enemy.x, enemy.y) < d.radius) {
+          if (distance(px, py, enemy.x, enemy.y) < d.radius * this.areaMultiplier) {
             const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
             enemy.takeDamage(d.damage, fromAngle);
             hits.push(enemy);
@@ -186,11 +186,11 @@ export class AreaWeapon extends WeaponBase {
     }
 
     // Normal: only hit on pulse frame
-    if (this.pulseTimer > this.data.cooldown - 0.05) {
+    if (this.pulseTimer > this.data.cooldown * this.cooldownMultiplier - 0.05) {
       const hits: Enemy[] = [];
       for (const enemy of enemies) {
         if (enemy.dead) continue;
-        if (distance(px, py, enemy.x, enemy.y) < d.radius) {
+        if (distance(px, py, enemy.x, enemy.y) < d.radius * this.areaMultiplier) {
           const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
           enemy.takeDamage(d.damage, fromAngle);
           hits.push(enemy);

@@ -102,7 +102,7 @@ export class ForceField extends WeaponBase {
     for (const enemy of enemies) {
       if (enemy.dead) continue;
       const dist = distance(px, py, enemy.x, enemy.y);
-      if (dist < d.radius && enemy.serverId < 0) {
+      if (dist < d.radius * this.areaMultiplier && enemy.serverId < 0) {
         // Apply slow: 50% reduction (evolved: 70%)
         const slowFactor = this.evolved ? 0.3 : 0.5;
         enemy.speed = Math.min(enemy.speed, enemy.baseSpeed * slowFactor);
@@ -112,7 +112,7 @@ export class ForceField extends WeaponBase {
     // Count enemies being slowed for visual intensity
     let slowedCount = 0;
     for (const enemy of enemies) {
-      if (!enemy.dead && distance(px, py, enemy.x, enemy.y) < d.radius) {
+      if (!enemy.dead && distance(px, py, enemy.x, enemy.y) < d.radius * this.areaMultiplier) {
         slowedCount++;
       }
     }
@@ -120,7 +120,7 @@ export class ForceField extends WeaponBase {
     // Draw field — brighter when actively slowing enemies
     this.fieldVisual.clear();
     const breathe = Math.sin(this.pulsePhase) * 0.05 + 0.95;
-    const r = d.radius * breathe;
+    const r = d.radius * this.areaMultiplier * breathe;
     const color = this.evolved ? 0xcc66ff : 0x66aaff;
     const activeBoost = Math.min(slowedCount * 0.015, 0.08);
 
@@ -144,13 +144,13 @@ export class ForceField extends WeaponBase {
   checkHitPoint(x: number, y: number, radius: number): boolean {
     const px = this.container.x;
     const py = this.container.y;
-    return distance(px, py, x, y) < this.data.radius + radius;
+    return distance(px, py, x, y) < this.data.radius * this.areaMultiplier + radius;
   }
 
   getHits(enemies: Enemy[]): Enemy[] {
     const d = this.data;
     if (this.tickTimer > 0) return [];
-    this.tickTimer = d.tickRate;
+    this.tickTimer = d.tickRate * this.cooldownMultiplier;
 
     const px = this.container.x;
     const py = this.container.y;
@@ -158,7 +158,7 @@ export class ForceField extends WeaponBase {
 
     for (const enemy of enemies) {
       if (enemy.dead) continue;
-      if (distance(px, py, enemy.x, enemy.y) < d.radius) {
+      if (distance(px, py, enemy.x, enemy.y) < d.radius * this.areaMultiplier) {
         const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
         enemy.takeDamage(d.damage, fromAngle);
         hits.push(enemy);

@@ -123,6 +123,8 @@ export class RemotePlayer {
   private body: Graphics;
   private weaponVisuals: Graphics;
   private auraAngle = Math.random() * Math.PI * 2;
+  private emoteText: Text | null = null;
+  private emoteTimer = 0;
 
   constructor(id: string, name: string, team: Team) {
     this.id = id;
@@ -205,6 +207,44 @@ export class RemotePlayer {
     }
 
     this.container.alpha = this.alive ? 1 : 0.3;
+
+    // Emote bubble timer
+    if (this.emoteText && this.emoteTimer > 0) {
+      this.emoteTimer -= dt;
+      if (this.emoteTimer <= 0.5) {
+        this.emoteText.alpha = Math.max(0, this.emoteTimer / 0.5);
+      }
+      if (this.emoteTimer <= 0) {
+        this.container.removeChild(this.emoteText);
+        this.emoteText.destroy();
+        this.emoteText = null;
+        this.emoteTimer = 0;
+      }
+    }
+  }
+
+  showEmote(emoteId: string): void {
+    // Remove existing emote
+    if (this.emoteText) {
+      this.container.removeChild(this.emoteText);
+      this.emoteText.destroy();
+      this.emoteText = null;
+    }
+
+    const EMOTE_MAP: Record<string, string> = {
+      gg: '👍', help: '❗', rip: '💀', nice: '🎉', rush: '⚡', defend: '🛡️',
+    };
+    const emoji = EMOTE_MAP[emoteId] || emoteId;
+
+    this.emoteText = new Text({
+      text: emoji,
+      style: new TextStyle({ fontSize: 22, fill: 0xffffff, fontFamily: 'Arial' }),
+    });
+    this.emoteText.anchor.set(0.5);
+    this.emoteText.y = -50;
+    this.emoteText.alpha = 1;
+    this.container.addChild(this.emoteText);
+    this.emoteTimer = 2;
   }
 
   syncData(data: { x: number; y: number; level: number; kills: number; hp: number; maxHp: number; rotation: number; alive: boolean; weapons?: WeaponSyncData[] }): void {

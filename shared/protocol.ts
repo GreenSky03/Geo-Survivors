@@ -282,9 +282,21 @@ export interface S2C_PartyJoined { type: 'party_joined'; code: string; members: 
 export interface S2C_PartyMemberJoin { type: 'party_member_join'; name: string; }
 export interface S2C_PartyMemberLeave { type: 'party_member_leave'; name: string; }
 export interface S2C_PartyError { type: 'party_error'; reason: string; }
+export interface S2C_PartyGameStart { type: 'party_game_start'; roomCode: string; }
+
+// ─── Spectate ───
+export interface C2S_Spectate { type: 'spectate'; }
+export interface C2S_SpectateCycle { type: 'spectate_cycle'; direction: 'next' | 'prev'; }
+export interface S2C_SpectateStart { type: 'spectate_start'; targetId: string; targetName: string; }
+export interface S2C_SpectateEnd { type: 'spectate_end'; }
+
+// ─── Emote ───
+export interface C2S_Emote { type: 'emote'; emoteId: string; }
+export interface S2C_PlayerEmote { type: 'player_emote'; playerId: string; emoteId: string; }
 
 export type C2S_Message = C2S_Join | C2S_State | C2S_EnemyHit | C2S_PvpHit | C2S_Chat | C2S_Ping | C2S_PullRequest
-  | C2S_CreateParty | C2S_JoinParty | C2S_PartyStart;
+  | C2S_CreateParty | C2S_JoinParty | C2S_PartyStart
+  | C2S_Spectate | C2S_SpectateCycle | C2S_Emote;
 
 export type S2C_Message =
   | S2C_Welcome | S2C_PlayerJoin | S2C_PlayerLeave | S2C_PlayersSync
@@ -295,4 +307,5 @@ export type S2C_Message =
   | S2C_PingSignal | S2C_WaveEvent
   | S2C_EventWave | S2C_EventWaveEnd | S2C_MiniBossSpawn
   | S2C_BossAttack | S2C_BlackHoleSpawn | S2C_BlackHoleSync | S2C_BlackHoleDespawn
-  | S2C_PartyCreated | S2C_PartyJoined | S2C_PartyMemberJoin | S2C_PartyMemberLeave | S2C_PartyError;
+  | S2C_PartyCreated | S2C_PartyJoined | S2C_PartyMemberJoin | S2C_PartyMemberLeave | S2C_PartyError | S2C_PartyGameStart
+  | S2C_SpectateStart | S2C_SpectateEnd | S2C_PlayerEmote;

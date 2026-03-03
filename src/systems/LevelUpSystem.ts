@@ -8,6 +8,7 @@ import { BoomerangWeapon } from '../weapons/BoomerangWeapon';
 import { HomingMissileWeapon } from '../weapons/HomingMissileWeapon';
 import { Player } from '../entities/Player';
 import { t } from './i18n';
+import { RelicSystem, RELIC_DEFS } from './RelicSystem';
 
 export interface UpgradeChoice {
   id: string;
@@ -17,12 +18,13 @@ export interface UpgradeChoice {
   /** Detailed stat change line, e.g. "Damage: 10 → 18" */
   statLine: string;
   apply: () => void;
+  isRelic?: boolean;
 }
 
 export class LevelUpSystem {
   private weaponClasses = [OrbitWeapon, BulletWeapon, AreaWeapon, ChainLightning, ForceField, BoomerangWeapon, HomingMissileWeapon];
 
-  generateChoices(player: Player, weapons: WeaponBase[], count = 3): UpgradeChoice[] {
+  generateChoices(player: Player, weapons: WeaponBase[], count = 3, relicSystem?: RelicSystem): UpgradeChoice[] {
     const pool: UpgradeChoice[] = [];
 
     // Weapon upgrades
@@ -117,6 +119,31 @@ export class LevelUpSystem {
       statLine: `Regen: ${player.hpRegen.toFixed(1)} → ${(player.hpRegen + 1.5).toFixed(1)} HP/s`,
       apply: () => { player.hpRegen += 1.5; },
     });
+
+    // Relic choices (one random available relic per level-up pool)
+    if (relicSystem) {
+      const availableRelics = RELIC_DEFS.filter(r => relicSystem.canAcquire(r.id));
+      // Shuffle available relics
+      for (let i = availableRelics.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [availableRelics[i], availableRelics[j]] = [availableRelics[j], availableRelics[i]];
+      }
+      // Add up to 2 relics to the pool
+      const relicCount = Math.min(2, availableRelics.length);
+      for (let i = 0; i < relicCount; i++) {
+        const rdef = availableRelics[i];
+        const curCount = relicSystem.getCount(rdef.id);
+        pool.push({
+          id: `relic_${rdef.id}`,
+          name: `${t(rdef.nameKey)}`,
+          description: t(rdef.descKey),
+          icon: rdef.icon,
+          statLine: curCount > 0 ? `Stack: ${curCount} → ${curCount + 1}` : t('relic.label'),
+          apply: () => { relicSystem.acquire(rdef.id); },
+          isRelic: true,
+        });
+      }
+    }
 
     // Shuffle
     for (let i = pool.length - 1; i > 0; i--) {

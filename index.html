@@ -76,6 +76,99 @@
       border-color: #ffcc33; background: rgba(255,200,50,0.12);
     }
     .level-up-card.evolve-card .card-stat { color: #ffcc33; background: rgba(255,200,50,0.1); }
+    .level-up-card.relic-card { border-color: rgba(170,68,255,0.4); }
+    .level-up-card.relic-card:hover, .level-up-card.relic-card:active {
+      border-color: #aa44ff; background: rgba(170,68,255,0.12);
+    }
+    .level-up-card.relic-card .card-stat { color: #cc88ff; background: rgba(170,68,255,0.1); }
+
+    #relic-hud {
+      position: absolute; top: 80px; left: 20px;
+      display: flex; gap: 4px; flex-wrap: wrap; max-width: 200px;
+    }
+    .relic-icon {
+      width: 24px; height: 24px; background: rgba(170,68,255,0.15);
+      border: 1px solid rgba(170,68,255,0.3); border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; position: relative; cursor: default;
+    }
+    .relic-icon .relic-stack {
+      position: absolute; bottom: -2px; right: -2px; font-size: 8px;
+      background: rgba(0,0,0,0.7); border-radius: 2px; padding: 0 2px;
+      color: #cc88ff;
+    }
+
+    #combo-counter {
+      position: absolute; top: 70px; right: 20px;
+      font-size: 24px; font-weight: bold; color: #ff8844;
+      text-shadow: 0 0 15px rgba(255,136,68,0.6);
+      display: none; text-align: right;
+      transition: transform 0.1s;
+    }
+
+    #tutorial-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto; z-index: 200;
+    }
+    #tutorial-overlay .tutorial-text {
+      font-size: 24px; font-weight: bold; color: #fff;
+      text-shadow: 0 0 20px rgba(0,230,176,0.5);
+      margin-bottom: 20px; text-align: center; padding: 0 20px;
+    }
+    #tutorial-overlay .tutorial-skip {
+      padding: 8px 20px; background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 6px;
+      color: #fff; cursor: pointer; font-size: 14px;
+    }
+
+    #stats-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(5, 5, 20, 0.95); display: none;
+      flex-direction: column; align-items: center; justify-content: flex-start;
+      padding-top: 40px; overflow-y: auto;
+      pointer-events: auto; z-index: 100;
+    }
+    #stats-screen h2 { font-size: 28px; color: #fff; margin-bottom: 16px; text-shadow: 0 0 20px rgba(255,255,255,0.3); }
+    .stats-table {
+      width: 90%; max-width: 700px; border-collapse: collapse; margin-bottom: 20px;
+    }
+    .stats-table th, .stats-table td {
+      padding: 6px 8px; text-align: center; font-size: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .stats-table th { color: #44ffaa; font-size: 11px; text-transform: uppercase; }
+    .stats-table td { color: rgba(255,255,255,0.8); }
+
+    #spectate-banner {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 8px;
+      font-size: 16px; color: #fff; display: none; z-index: 60;
+      border: 1px solid rgba(68,136,255,0.3);
+    }
+    #spectate-controls {
+      position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+      display: none; gap: 10px; z-index: 60;
+    }
+    #spectate-controls button {
+      padding: 8px 16px; background: rgba(68,136,255,0.2);
+      border: 1px solid rgba(68,136,255,0.4); border-radius: 6px;
+      color: #fff; cursor: pointer; font-size: 13px; pointer-events: auto;
+    }
+
+    #emote-radial {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 200px; height: 200px; display: none; z-index: 150; pointer-events: auto;
+    }
+    .emote-btn {
+      position: absolute; width: 44px; height: 44px;
+      background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 50%; cursor: pointer; font-size: 22px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.1s, background 0.1s;
+    }
+    .emote-btn:hover { background: rgba(68,255,170,0.2); transform: scale(1.15); }
 
     #pause-screen {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -671,6 +764,7 @@
       <div style="margin-top:12px; display:flex; gap:10px;">
         <button class="mode-btn" id="shop-btn">SHOP</button>
         <button class="mode-btn" id="ach-btn">ACHIEVEMENTS</button>
+        <button class="mode-btn" id="stats-btn">STATS</button>
       </div>
       <div class="controls-hint" id="controls-hint">WASD or Arrow Keys to move · ESC to pause</div>
       <div style="margin-top:20px; display:flex; gap:8px;">
@@ -725,6 +819,7 @@
       <div class="death-penalty" id="death-penalty-text" style="font-size:16px;color:#ff8844;margin-bottom:12px;text-shadow:0 0 10px rgba(255,136,68,0.5);letter-spacing:2px;">ALL PROGRESS LOST</div>
       <div class="respawn-timer" id="respawn-timer-text">Respawning in 5...</div>
       <div class="respawn-bar-outer"><div class="respawn-bar-inner" id="respawn-bar-fill"></div></div>
+      <button id="spectate-death-btn" style="margin-top:10px; padding:8px 20px; background:rgba(68,136,255,0.2); border:1px solid rgba(68,136,255,0.4); border-radius:8px; color:#fff; cursor:pointer; font-size:14px; pointer-events:auto; display:none;">SPECTATE</button>
       <div class="death-hint">You will respawn at a safe location</div>
     </div>
     <div id="boss-warning">⚠ BOSS INCOMING ⚠</div>
@@ -771,6 +866,36 @@
         <div class="toast-reward"></div>
       </div>
     </div>
+
+    <!-- Relic HUD -->
+    <div id="relic-hud"></div>
+
+    <!-- Combo Counter -->
+    <div id="combo-counter"></div>
+
+    <!-- Tutorial Overlay -->
+    <div id="tutorial-overlay">
+      <div class="tutorial-text" id="tutorial-text"></div>
+      <button class="tutorial-skip" id="tutorial-skip-btn">SKIP</button>
+    </div>
+
+    <!-- Stats Screen -->
+    <div id="stats-screen">
+      <h2 id="stats-title">RUN HISTORY</h2>
+      <div id="stats-content"></div>
+      <button id="stats-back-btn" style="margin-top:16px; padding:10px 24px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:#fff; cursor:pointer; font-size:14px;">BACK</button>
+    </div>
+
+    <!-- Spectate Banner -->
+    <div id="spectate-banner"></div>
+    <div id="spectate-controls">
+      <button id="spectate-prev-btn">PREV</button>
+      <button id="spectate-exit-btn">EXIT</button>
+      <button id="spectate-next-btn">NEXT</button>
+    </div>
+
+    <!-- Emote Radial Menu -->
+    <div id="emote-radial"></div>
 
     <!-- Event Banner -->
     <div id="event-banner"></div>

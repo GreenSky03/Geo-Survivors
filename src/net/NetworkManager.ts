@@ -42,6 +42,12 @@ export type NetEventMap = {
   party_member_join: { name: string };
   party_member_leave: { name: string };
   party_error: { reason: string };
+  party_game_start: { roomCode: string };
+  // Spectate
+  spectate_start: { targetId: string; targetName: string };
+  spectate_end: void;
+  // Emote
+  player_emote: { playerId: string; emoteId: string };
   connected: void;
   disconnected: void;
 };
@@ -161,6 +167,10 @@ export class NetworkManager {
       case 'party_member_join': this.emit('party_member_join', { name: (msg as any).name }); break;
       case 'party_member_leave': this.emit('party_member_leave', { name: (msg as any).name }); break;
       case 'party_error': this.emit('party_error', { reason: (msg as any).reason }); break;
+      case 'party_game_start': this.emit('party_game_start', { roomCode: (msg as any).roomCode }); break;
+      case 'spectate_start': this.emit('spectate_start', { targetId: (msg as any).targetId, targetName: (msg as any).targetName }); break;
+      case 'spectate_end': this.emit('spectate_end', undefined); break;
+      case 'player_emote': this.emit('player_emote', { playerId: (msg as any).playerId, emoteId: (msg as any).emoteId }); break;
     }
   }
 
@@ -204,6 +214,18 @@ export class NetworkManager {
 
   sendPartyStart(): void {
     this.send({ type: 'party_start' });
+  }
+
+  sendSpectate(): void {
+    this.send({ type: 'spectate' });
+  }
+
+  sendSpectateCycle(direction: 'next' | 'prev'): void {
+    this.send({ type: 'spectate_cycle', direction });
+  }
+
+  sendEmote(emoteId: string): void {
+    this.send({ type: 'emote', emoteId });
   }
 
   on<K extends keyof NetEventMap>(event: K, listener: Listener<NetEventMap[K]>): void {

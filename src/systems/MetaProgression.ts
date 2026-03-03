@@ -12,6 +12,19 @@ export interface MetaUpgrade {
   values: number[];
 }
 
+export interface RunRecord {
+  date: string;
+  durationS: number;
+  kills: number;
+  level: number;
+  maxCombo: number;
+  totalDamage: number;
+  coinsEarned: number;
+  bossKills: number;
+  character: string;
+  weaponsFinal: string[];
+}
+
 export interface MetaSave {
   coins: number;
   upgrades: Record<string, number>; // upgradeId → currentTier
@@ -22,6 +35,7 @@ export interface MetaSave {
   achievements: string[]; // unlocked achievement ids
   dailyDate: string; // 'YYYY-MM-DD'
   dailyCompleted: string[]; // completed daily ids for today
+  runHistory: RunRecord[];
 }
 
 export const META_UPGRADES: MetaUpgrade[] = [
@@ -68,6 +82,7 @@ function defaultSave(): MetaSave {
     achievements: [],
     dailyDate: '',
     dailyCompleted: [],
+    runHistory: [],
   };
 }
 
@@ -222,6 +237,20 @@ export class MetaProgression {
       this.save.dailyCompleted.push(id);
       this.persist();
     }
+  }
+
+  // ─── Run history ───
+  addRunRecord(record: RunRecord): void {
+    this.save.runHistory.push(record);
+    // Keep last 50 records
+    if (this.save.runHistory.length > 50) {
+      this.save.runHistory = this.save.runHistory.slice(-50);
+    }
+    this.persist();
+  }
+
+  getRunHistory(): RunRecord[] {
+    return this.save.runHistory || [];
   }
 
   /** Reset all saved data (for debug) */

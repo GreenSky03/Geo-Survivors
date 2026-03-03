@@ -106,7 +106,7 @@ export class ChainLightning extends WeaponBase {
     this.fireTimer -= dt;
 
     if (this.fireTimer <= 0 && enemies.length > 0) {
-      this.fireTimer = d.cooldown;
+      this.fireTimer = d.cooldown * this.cooldownMultiplier;
       const alive = enemies.filter(e => !e.dead);
 
       for (let b = 0; b < this.boltCount && alive.length > 0; b++) {
@@ -114,7 +114,7 @@ export class ChainLightning extends WeaponBase {
         const sorted = alive.sort((a, bb) =>
           distance(px, py, a.x, a.y) - distance(px, py, bb.x, bb.y));
         const startTarget = sorted[b % sorted.length];
-        if (!startTarget || distance(px, py, startTarget.x, startTarget.y) > d.range) continue;
+        if (!startTarget || distance(px, py, startTarget.x, startTarget.y) > d.range * this.areaMultiplier) continue;
 
         const chainTargets: Enemy[] = [startTarget];
         const hit = new Set<Enemy>([startTarget]);
@@ -123,7 +123,7 @@ export class ChainLightning extends WeaponBase {
 
         for (let i = 1; i < d.chains; i++) {
           let nearest: Enemy | null = null;
-          let nearDist = d.range * 0.6;
+          let nearDist = d.range * this.areaMultiplier * 0.6;
           for (const e of alive) {
             if (hit.has(e)) continue;
             const dist = distance(lastX, lastY, e.x, e.y);

@@ -196,6 +196,66 @@ const translations: Record<string, Record<Lang, string>> = {
   'event.healing_rain': { en: 'HEALING RAIN', ko: '치유의 비' },
   'event.miniboss': { en: 'MINI-BOSS INCOMING', ko: '미니보스 출현' },
 
+  // ─── Relics ───
+  'relic.glass_cannon.name': { en: 'Glass Cannon', ko: '유리 대포' },
+  'relic.glass_cannon.desc': { en: 'Damage +50%, Max HP halved', ko: '공격력 +50%, 최대HP 절반' },
+  'relic.vampiric_touch.name': { en: 'Vampiric Touch', ko: '흡혈의 손길' },
+  'relic.vampiric_touch.desc': { en: 'Lifesteal 5% per stack', ko: '스택당 흡혈 5%' },
+  'relic.thorns.name': { en: 'Thorns', ko: '가시' },
+  'relic.thorns.desc': { en: 'Reflect 30% damage per stack', ko: '스택당 받은 데미지 30% 반사' },
+  'relic.lucky_star.name': { en: 'Lucky Star', ko: '행운의 별' },
+  'relic.lucky_star.desc': { en: 'Crit +10%, Crit DMG +0.5x per stack', ko: '스택당 치명타 +10%, 치명타 배율 +0.5x' },
+  'relic.magnet_core.name': { en: 'Magnet Core', ko: '자석 코어' },
+  'relic.magnet_core.desc': { en: 'Magnet range +80 per stack', ko: '스택당 자석 범위 +80' },
+  'relic.swift_boots.name': { en: 'Swift Boots', ko: '신속의 부츠' },
+  'relic.swift_boots.desc': { en: 'Speed +15% per stack', ko: '스택당 이동속도 +15%' },
+  'relic.cooldown_gem.name': { en: 'Cooldown Gem', ko: '쿨타임 보석' },
+  'relic.cooldown_gem.desc': { en: 'Cooldown -10% per stack', ko: '스택당 무기 쿨타임 -10%' },
+  'relic.area_amplifier.name': { en: 'Area Amplifier', ko: '범위 증폭기' },
+  'relic.area_amplifier.desc': { en: 'Weapon area +20% per stack', ko: '스택당 무기 범위 +20%' },
+  'relic.xp_siphon.name': { en: 'XP Siphon', ko: 'XP 흡수기' },
+  'relic.xp_siphon.desc': { en: 'XP gain +25% per stack', ko: '스택당 XP 획득 +25%' },
+  'relic.gold_fever.name': { en: 'Gold Fever', ko: '황금열' },
+  'relic.gold_fever.desc': { en: 'Coins +50% at end per stack', ko: '스택당 종료 시 코인 +50%' },
+  'relic.regen_orb.name': { en: 'Regen Orb', ko: '재생 오브' },
+  'relic.regen_orb.desc': { en: 'HP regen +2/s per stack', ko: '스택당 HP 재생 +2/초' },
+  'relic.last_stand.name': { en: 'Last Stand', ko: '최후의 저항' },
+  'relic.last_stand.desc': { en: 'Damage +80% when HP below 30%', ko: 'HP 30% 이하 시 공격력 +80%' },
+  'relic.label': { en: 'RELIC', ko: '유물' },
+
+  // ─── Combo ───
+  'combo.label': { en: 'COMBO', ko: '콤보' },
+
+  // ─── Tutorial ───
+  'tutorial.move': { en: 'Move with WASD or Arrow Keys', ko: 'WASD 또는 방향키로 이동하세요' },
+  'tutorial.weapon': { en: 'Weapons fire automatically!', ko: '무기는 자동으로 발사됩니다!' },
+  'tutorial.xp': { en: 'Collect blue XP orbs to level up', ko: '파란 XP 오브를 모아 레벨업하세요' },
+  'tutorial.levelup': { en: 'Choose an upgrade when you level up!', ko: '레벨업 시 업그레이드를 선택하세요!' },
+  'tutorial.skip': { en: 'SKIP', ko: '건너뛰기' },
+
+  // ─── Stats ───
+  'stats.title': { en: 'RUN HISTORY', ko: '런 기록' },
+  'stats.btn': { en: 'STATS', ko: '통계' },
+  'stats.date': { en: 'Date', ko: '날짜' },
+  'stats.duration': { en: 'Duration', ko: '생존시간' },
+  'stats.kills_col': { en: 'Kills', ko: '처치' },
+  'stats.level_col': { en: 'Level', ko: '레벨' },
+  'stats.maxCombo': { en: 'Max Combo', ko: '최대 콤보' },
+  'stats.damage': { en: 'Damage', ko: '데미지' },
+  'stats.coins_col': { en: 'Coins', ko: '코인' },
+  'stats.bossKills': { en: 'Bosses', ko: '보스' },
+  'stats.noData': { en: 'No run history yet', ko: '기록이 없습니다' },
+
+  // ─── Spectate ───
+  'spectate.banner': { en: 'Spectating: {name}', ko: '관전 중: {name}' },
+  'spectate.btn': { en: 'SPECTATE', ko: '관전' },
+  'spectate.exit': { en: 'EXIT', ko: '나가기' },
+  'spectate.next': { en: 'NEXT', ko: '다음' },
+  'spectate.prev': { en: 'PREV', ko: '이전' },
+
+  // ─── Emote ───
+  'emote.hint': { en: 'Press E for emotes', ko: 'E키로 이모트' },
+
   // ─── Party ───
   'party.create': { en: 'CREATE PARTY', ko: '파티 만들기' },
   'party.join': { en: 'JOIN PARTY', ko: '파티 참가' },

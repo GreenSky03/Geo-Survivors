@@ -12,6 +12,7 @@ import type {
   S2C_EventWave, S2C_EventWaveEnd, S2C_MiniBossSpawn,
   S2C_BossAttack, S2C_BlackHoleSpawn, S2C_BlackHoleSync, S2C_BlackHoleDespawn,
   S2C_PartyCreated, S2C_PartyJoined, S2C_PartyMemberJoin, S2C_PartyMemberLeave, S2C_PartyError,
+  S2C_SpectateStart, S2C_SpectateEnd, S2C_PlayerEmote,
 } from '../shared/protocol';
 import { TEAMS, MAP_HALF_W, MAP_HALF_H } from '../shared/protocol';
 
@@ -537,10 +538,10 @@ function triggerEventWave(room: Room): void {
 
   let duration = 0;
   switch (event) {
-    case 'gold_rush': duration = 15; break;
+    case 'gold_rush': duration = 30; break;
     case 'elite_invasion': duration = 20; break;
     case 'boss_rush': duration = 0; break; // instant
-    case 'healing_rain': duration = 12; break;
+    case 'healing_rain': duration = 20; break;
   }
 
   // Broadcast event start
@@ -1481,6 +1482,63 @@ wss.on('connection', (ws: WebSocket) => {
         (party as any).roomCode = room.code;
         (party as any).forcedTeam = team;
         console.log(`Party ${partyCode} starting in room ${room.code}, team ${team}`);
+        // Notify all party members to join the game
+        for (const m of party.members.values()) {
+          send(m.ws, { type: 'party_game_start', roomCode: room.code } as any);
+        }
+        break;
+      }
+
+      // ─── Spectate ───
+      case 'spectate': {
+        const sp = playerRoom?.players.get(playerId);
+        if (!playerRoom || !sp) break;
+        // Find alive players in the room (excluding self)
+        const alivePlayers = Array.from(playerRoom.players.values())
+          .filter(p => p.data.alive && p.data.id !== playerId);
+        if (alivePlayers.length === 0) break;
+        const target = alivePlayers[0];
+        (sp as any).isSpectating = true;
+        (sp as any).spectateTarget = target.data.id;
+        send(ws, { type: 'spectate_start', targetId: target.data.id, targetName: target.data.name } as any);
+        break;
+      }
+
+      case 'spectate_cycle': {
+        const sp = playerRoom?.players.get(playerId);
+        if (!playerRoom || !sp || !(sp as any).isSpectating) break;
+        const dir = (msg as any).direction;
+        const alivePlayers = Array.from(playerRoom.players.values())
+          .filter(p => p.data.alive && p.data.id !== playerId);
+        if (alivePlayers.length === 0) {
+          (sp as any).isSpectating = false;
+          send(ws, { type: 'spectate_end' } as any);
+          break;
+        }
+        const curIdx = alivePlayers.findIndex(p => p.data.id === (sp as any).spectateTarget);
+        let nextIdx = dir === 'next' ? (curIdx + 1) % alivePlayers.length
+          : (curIdx - 1 + alivePlayers.length) % alivePlayers.length;
+        const next = alivePlayers[nextIdx];
+        (sp as any).spectateTarget = next.data.id;
+        send(ws, { type: 'spectate_start', targetId: next.data.id, targetName: next.data.name } as any);
+        break;
+      }
+
+      // ─── Emote ───
+      case 'emote': {
+        const sp = playerRoom?.players.get(playerId);
+        if (!playerRoom || !sp) break;
+        const emoteId = (msg as any).emoteId as string;
+        // Validate emote id
+        const validEmotes = ['gg', 'help', 'rip', 'nice', 'rush', 'defend'];
+        if (!validEmotes.includes(emoteId)) break;
+        // Cooldown (3s)
+        const now = Date.now();
+        const lastEmote = (sp as any).__lastEmoteTime || 0;
+        if (now - lastEmote < 3000) break;
+        (sp as any).__lastEmoteTime = now;
+        // Broadcast to room
+        broadcast(playerRoom, { type: 'player_emote', playerId, emoteId } as any);
         break;
       }
     } } catch (err) {
@@ -1585,6 +1643,14 @@ setInterval(() => {
         const endMsg: S2C_EventWaveEnd = { type: 'event_wave_end', event: room.activeEvent.type };
         broadcast(room, endMsg);
         room.activeEvent = null;
+      } else if (room.activeEvent.type === 'healing_rain') {
+        // Heal all alive players by 3 HP/s (applied per tick)
+        const healPerTick = Math.ceil(3 * TICK_S);
+        for (const sp of room.players.values()) {
+          if (sp.data.alive && sp.data.hp < sp.data.maxHp) {
+            sp.data.hp = Math.min(sp.data.maxHp, sp.data.hp + healPerTick);
+          }
+        }
       }
     }
 

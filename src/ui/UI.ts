@@ -331,7 +331,8 @@ export class UI {
     for (const choice of choices) {
       const card = document.createElement('div');
       const isEvolve = choice.icon === '★';
-      card.className = `level-up-card${isEvolve ? ' evolve-card' : ''}`;
+      const isRelic = !!(choice as any).isRelic;
+      card.className = `level-up-card${isEvolve ? ' evolve-card' : ''}${isRelic ? ' relic-card' : ''}`;
 
       let html = `
         <div class="card-icon">${choice.icon}</div>
@@ -367,7 +368,7 @@ export class UI {
   showGameOver(stats: {
     time: number; kills: number; level: number;
     totalDamage?: number; wave?: number; pickups?: number;
-    coinsEarned?: number;
+    coinsEarned?: number; maxCombo?: number;
   }, onRestart: () => void): void {
     this.onRestartCallback = onRestart;
     this.gameOverTitle.textContent = t('gameover.title');
@@ -385,6 +386,7 @@ export class UI {
     if (stats.totalDamage) html += `<br>Total DMG: ${stats.totalDamage.toLocaleString()}`;
     if (dps) html += `<br>DPS: ${dps.toLocaleString()}`;
     if (stats.pickups) html += `<br>Pickups: ${stats.pickups}`;
+    if (stats.maxCombo && stats.maxCombo > 0) html += `<br>Max Combo: ${stats.maxCombo}x`;
     this.gameOverStats.innerHTML = html;
 
     // Show coins earned
@@ -898,15 +900,35 @@ export class UI {
   // ═════════════════════════════════════
   // ─── EVENT BANNER ───────────────────
   // ═════════════════════════════════════
+  private eventBannerInterval: ReturnType<typeof setInterval> | null = null;
+  private eventBannerTimeout: ReturnType<typeof setTimeout> | null = null;
+
   showEventBanner(text: string, colorClass: string, duration: number): void {
     const banner = document.getElementById('event-banner')!;
-    banner.textContent = text;
+    // Clear previous timers
+    if (this.eventBannerInterval) { clearInterval(this.eventBannerInterval); this.eventBannerInterval = null; }
+    if (this.eventBannerTimeout) { clearTimeout(this.eventBannerTimeout); this.eventBannerTimeout = null; }
+
+    let remaining = duration;
+    banner.textContent = `${text} (${remaining}s)`;
     banner.className = colorClass;
     banner.style.display = 'block';
-    setTimeout(() => { banner.style.display = 'none'; }, duration * 1000);
+
+    this.eventBannerInterval = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        this.hideEventBanner();
+      } else {
+        banner.textContent = `${text} (${remaining}s)`;
+      }
+    }, 1000);
+
+    this.eventBannerTimeout = setTimeout(() => { this.hideEventBanner(); }, duration * 1000);
   }
 
   hideEventBanner(): void {
+    if (this.eventBannerInterval) { clearInterval(this.eventBannerInterval); this.eventBannerInterval = null; }
+    if (this.eventBannerTimeout) { clearTimeout(this.eventBannerTimeout); this.eventBannerTimeout = null; }
     document.getElementById('event-banner')!.style.display = 'none';
   }
 
@@ -968,6 +990,185 @@ export class UI {
     document.getElementById('coin-display')!.style.display = 'none';
   }
 
+  // ═════════════════════════════════════
+  // ─── RELIC HUD ─────────────────────
+  // ═════════════════════════════════════
+  updateRelicHud(relics: { id: string; count: number; icon: string }[]): void {
+    const hud = document.getElementById('relic-hud')!;
+    hud.innerHTML = '';
+    for (const r of relics) {
+      const div = document.createElement('div');
+      div.className = 'relic-icon';
+      div.title = r.id;
+      div.textContent = r.icon;
+      if (r.count > 1) {
+        const stack = document.createElement('span');
+        stack.className = 'relic-stack';
+        stack.textContent = `x${r.count}`;
+        div.appendChild(stack);
+      }
+      hud.appendChild(div);
+    }
+  }
+
+  // ═════════════════════════════════════
+  // ─── COMBO COUNTER ─────────────────
+  // ═════════════════════════════════════
+  updateCombo(count: number): void {
+    const el = document.getElementById('combo-counter')!;
+    if (count < 3) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = 'block';
+    el.textContent = `${count}x ${t('combo.label')}`;
+    // Color progression
+    if (count >= 100) {
+      el.style.color = '#ff44ff';
+      el.style.textShadow = '0 0 20px rgba(255,68,255,0.8)';
+      el.style.fontSize = '36px';
+    } else if (count >= 50) {
+      el.style.color = '#ff4444';
+      el.style.textShadow = '0 0 15px rgba(255,68,68,0.6)';
+      el.style.fontSize = '32px';
+    } else if (count >= 25) {
+      el.style.color = '#ff6644';
+      el.style.textShadow = '0 0 12px rgba(255,102,68,0.5)';
+      el.style.fontSize = '28px';
+    } else {
+      el.style.color = '#ff8844';
+      el.style.textShadow = '0 0 10px rgba(255,136,68,0.4)';
+      el.style.fontSize = '24px';
+    }
+    // Pop animation
+    el.style.transform = 'scale(1.2)';
+    setTimeout(() => { el.style.transform = 'scale(1)'; }, 100);
+  }
+
+  // ═════════════════════════════════════
+  // ─── TUTORIAL ──────────────────────
+  // ═════════════════════════════════════
+  showTutorialStep(text: string): void {
+    const overlay = document.getElementById('tutorial-overlay')!;
+    const textEl = document.getElementById('tutorial-text')!;
+    textEl.textContent = text;
+    overlay.style.display = 'flex';
+  }
+
+  hideTutorial(): void {
+    document.getElementById('tutorial-overlay')!.style.display = 'none';
+  }
+
+  onTutorialSkip(cb: () => void): void {
+    document.getElementById('tutorial-skip-btn')!.addEventListener('click', cb);
+  }
+
+  // ═════════════════════════════════════
+  // ─── STATS SCREEN ──────────────────
+  // ═════════════════════════════════════
+  showStats(records: {
+    date: string; durationS: number; kills: number; level: number;
+    maxCombo: number; totalDamage: number; coinsEarned: number; bossKills: number;
+  }[]): void {
+    const screen = document.getElementById('stats-screen')!;
+    document.getElementById('stats-title')!.textContent = t('stats.title');
+    const content = document.getElementById('stats-content')!;
+
+    if (records.length === 0) {
+      content.innerHTML = `<div style="opacity:0.5;margin:40px">${t('stats.noData')}</div>`;
+    } else {
+      let html = `<table class="stats-table"><thead><tr>
+        <th>${t('stats.date')}</th><th>${t('stats.duration')}</th>
+        <th>${t('stats.kills_col')}</th><th>${t('stats.level_col')}</th>
+        <th>${t('stats.maxCombo')}</th><th>${t('stats.damage')}</th>
+        <th>${t('stats.coins_col')}</th><th>${t('stats.bossKills')}</th>
+      </tr></thead><tbody>`;
+      // Show most recent first, limit 20
+      const shown = records.slice(-20).reverse();
+      for (const r of shown) {
+        const m = Math.floor(r.durationS / 60);
+        const s = Math.floor(r.durationS % 60);
+        html += `<tr>
+          <td>${r.date}</td>
+          <td>${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}</td>
+          <td>${r.kills}</td><td>${r.level}</td>
+          <td>${r.maxCombo}x</td><td>${r.totalDamage.toLocaleString()}</td>
+          <td>◆${r.coinsEarned}</td><td>${r.bossKills}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      content.innerHTML = html;
+    }
+
+    screen.style.display = 'flex';
+    this.titleScreen.style.display = 'none';
+  }
+
+  hideStats(): void {
+    document.getElementById('stats-screen')!.style.display = 'none';
+    this.showTitle();
+  }
+
+  // ═════════════════════════════════════
+  // ─── SPECTATE ──────────────────────
+  // ═════════════════════════════════════
+  showSpectateBanner(name: string): void {
+    const el = document.getElementById('spectate-banner')!;
+    el.textContent = t('spectate.banner', { name });
+    el.style.display = 'block';
+    document.getElementById('spectate-controls')!.style.display = 'flex';
+  }
+
+  hideSpectateBanner(): void {
+    document.getElementById('spectate-banner')!.style.display = 'none';
+    document.getElementById('spectate-controls')!.style.display = 'none';
+  }
+
+  // ═════════════════════════════════════
+  // ─── EMOTE RADIAL ──────────────────
+  // ═════════════════════════════════════
+  private emoteCallback: ((emoteId: string) => void) | null = null;
+
+  showEmoteRadial(cb: (emoteId: string) => void): void {
+    this.emoteCallback = cb;
+    const radial = document.getElementById('emote-radial')!;
+    radial.innerHTML = '';
+    const emotes = [
+      { id: 'gg', emoji: '👍', label: 'GG' },
+      { id: 'help', emoji: '❗', label: 'Help' },
+      { id: 'rip', emoji: '💀', label: 'RIP' },
+      { id: 'nice', emoji: '🎉', label: 'Nice' },
+      { id: 'rush', emoji: '⚡', label: 'Rush' },
+      { id: 'defend', emoji: '🛡️', label: 'Defend' },
+    ];
+    const cx = 100, cy = 100, r = 70;
+    for (let i = 0; i < emotes.length; i++) {
+      const angle = (Math.PI * 2 / emotes.length) * i - Math.PI / 2;
+      const btn = document.createElement('button');
+      btn.className = 'emote-btn';
+      btn.textContent = emotes[i].emoji;
+      btn.title = emotes[i].label;
+      btn.style.left = `${cx + Math.cos(angle) * r - 22}px`;
+      btn.style.top = `${cy + Math.sin(angle) * r - 22}px`;
+      const emoteId = emotes[i].id;
+      btn.addEventListener('click', () => {
+        if (this.emoteCallback) this.emoteCallback(emoteId);
+        this.hideEmoteRadial();
+      });
+      radial.appendChild(btn);
+    }
+    radial.style.display = 'block';
+  }
+
+  hideEmoteRadial(): void {
+    document.getElementById('emote-radial')!.style.display = 'none';
+    this.emoteCallback = null;
+  }
+
+  isEmoteRadialOpen(): boolean {
+    return document.getElementById('emote-radial')!.style.display === 'block';
+  }
+
   hideAll(): void {
     this.hideLevelUp();
     this.hideGameOver();
@@ -977,5 +1178,10 @@ export class UI {
     this.closeChatInput();
     this.bossWarning.style.display = 'none';
     this.hideEventBanner();
+    this.hideTutorial();
+    this.hideSpectateBanner();
+    this.hideEmoteRadial();
+    document.getElementById('combo-counter')!.style.display = 'none';
+    document.getElementById('relic-hud')!.innerHTML = '';
   }
 }
