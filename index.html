@@ -284,12 +284,245 @@
       text-shadow: 0 0 20px #ff4466;
     }
     #game-over-stats { font-size: 16px; opacity: 0.8; margin-bottom: 24px; text-align: center; line-height: 1.8; }
+    #game-over-coins {
+      font-size: 18px; color: #ffcc44; margin-bottom: 16px;
+      text-shadow: 0 0 10px rgba(255,204,68,0.5); letter-spacing: 1px;
+    }
     #restart-btn {
       padding: 12px 36px; font-size: 18px; background: transparent;
       border: 2px solid #44ffaa; color: #44ffaa; border-radius: 8px;
       cursor: pointer; transition: all 0.15s;
     }
     #restart-btn:hover { background: rgba(68,255,170,0.15); }
+
+    /* ─── Coin HUD ─── */
+    #coin-display {
+      position: absolute; top: 16px; right: 140px;
+      font-size: 13px; color: #ffcc44; display: none;
+      text-shadow: 0 0 8px rgba(255,204,68,0.3);
+    }
+
+    /* ─── Shop Screen ─── */
+    #shop-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, rgba(10,15,40,0.97) 0%, rgba(5,5,15,0.99) 100%);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto; z-index: 110;
+    }
+    #shop-screen h2 {
+      font-size: 28px; color: #ffcc44; margin-bottom: 6px;
+      text-shadow: 0 0 20px rgba(255,204,68,0.5); letter-spacing: 3px;
+    }
+    #shop-coins {
+      font-size: 16px; color: #ffcc44; margin-bottom: 20px;
+      text-shadow: 0 0 8px rgba(255,204,68,0.3);
+    }
+    #shop-upgrades {
+      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+      max-width: 700px;
+    }
+    .shop-card {
+      width: 120px; padding: 12px; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+      text-align: center; cursor: pointer; transition: all 0.15s;
+    }
+    .shop-card:hover { border-color: #ffcc44; background: rgba(255,204,68,0.08); transform: translateY(-2px); }
+    .shop-card .shop-icon { font-size: 24px; margin-bottom: 4px; }
+    .shop-card .shop-name { font-size: 12px; font-weight: bold; margin-bottom: 3px; }
+    .shop-card .shop-tier { font-size: 11px; color: #ffcc44; margin-bottom: 3px; }
+    .shop-card .shop-desc { font-size: 10px; opacity: 0.5; margin-bottom: 6px; }
+    .shop-card .shop-cost {
+      font-size: 12px; padding: 3px 8px; border-radius: 4px;
+      background: rgba(255,204,68,0.1); color: #ffcc44;
+    }
+    .shop-card.maxed { opacity: 0.5; cursor: default; }
+    .shop-card.maxed:hover { border-color: rgba(255,255,255,0.12); transform: none; }
+    #shop-back-btn {
+      margin-top: 20px; padding: 8px 28px; font-size: 14px;
+      background: transparent; border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 6px; cursor: pointer; transition: all 0.15s;
+    }
+    #shop-back-btn:hover { border-color: #ffcc44; color: #ffcc44; }
+
+    /* ─── Character Select ─── */
+    #character-select-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, rgba(10,15,40,0.97) 0%, rgba(5,5,15,0.99) 100%);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto; z-index: 105;
+    }
+    #character-select-screen h2 {
+      font-size: 24px; color: #44ffaa; margin-bottom: 20px;
+      text-shadow: 0 0 20px rgba(68,255,170,0.5); letter-spacing: 3px;
+    }
+    #char-cards {
+      display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    }
+    .char-card {
+      width: 140px; padding: 16px; background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.12); border-radius: 12px;
+      text-align: center; cursor: pointer; transition: all 0.15s; position: relative;
+    }
+    .char-card:hover { transform: translateY(-3px); }
+    .char-card.selected { border-color: #44ffaa; background: rgba(68,255,170,0.1); }
+    .char-card .char-shape { font-size: 36px; margin-bottom: 6px; }
+    .char-card .char-name { font-size: 14px; font-weight: bold; margin-bottom: 3px; }
+    .char-card .char-desc { font-size: 11px; opacity: 0.6; margin-bottom: 6px; }
+    .char-card .char-weapon { font-size: 10px; opacity: 0.4; }
+    .char-card.locked { opacity: 0.5; }
+    .char-card.locked .char-lock {
+      position: absolute; top: 8px; right: 8px;
+      font-size: 14px; color: #ff4466;
+    }
+    .char-card .char-unlock-cost {
+      font-size: 11px; color: #ffcc44; margin-top: 4px;
+      text-shadow: 0 0 6px rgba(255,204,68,0.3);
+    }
+    #char-select-btn {
+      margin-top: 20px; padding: 10px 36px; font-size: 16px;
+      background: transparent; border: 2px solid #44ffaa; color: #44ffaa;
+      border-radius: 8px; cursor: pointer; transition: all 0.15s; letter-spacing: 1px;
+    }
+    #char-select-btn:hover { background: rgba(68,255,170,0.12); }
+    #char-select-btn:disabled { opacity: 0.3; cursor: default; }
+    #char-back-btn {
+      margin-top: 10px; padding: 6px 24px; font-size: 13px;
+      background: transparent; border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 6px; cursor: pointer; transition: all 0.15s;
+    }
+    #char-back-btn:hover { border-color: #fff; }
+
+    /* ─── Achievement Screen ─── */
+    #achievement-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, rgba(10,15,40,0.97) 0%, rgba(5,5,15,0.99) 100%);
+      display: none; flex-direction: column; align-items: center;
+      pointer-events: auto; z-index: 110; overflow-y: auto; padding: 40px 20px;
+    }
+    #achievement-screen h2 {
+      font-size: 24px; color: #ffcc44; margin-bottom: 16px;
+      text-shadow: 0 0 20px rgba(255,204,68,0.5); letter-spacing: 3px;
+    }
+    #daily-section {
+      width: 100%; max-width: 600px; margin-bottom: 20px;
+      background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px;
+    }
+    #daily-section h3 {
+      font-size: 14px; color: #44aaff; margin-bottom: 8px; letter-spacing: 1px;
+    }
+    .daily-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 12px;
+    }
+    .daily-item.completed { opacity: 0.4; text-decoration: line-through; }
+    .daily-reward { color: #ffcc44; }
+    #ach-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 8px; width: 100%; max-width: 600px;
+    }
+    .ach-item {
+      padding: 10px; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+      text-align: center; transition: all 0.15s;
+    }
+    .ach-item.unlocked { border-color: rgba(255,204,68,0.3); }
+    .ach-item.locked { opacity: 0.35; }
+    .ach-item .ach-icon { font-size: 20px; margin-bottom: 4px; }
+    .ach-item .ach-name { font-size: 11px; font-weight: bold; margin-bottom: 2px; }
+    .ach-item .ach-desc { font-size: 10px; opacity: 0.5; }
+    .ach-item .ach-reward { font-size: 10px; color: #ffcc44; margin-top: 4px; }
+    #ach-back-btn {
+      margin-top: 20px; padding: 8px 28px; font-size: 14px;
+      background: transparent; border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 6px; cursor: pointer; transition: all 0.15s;
+    }
+    #ach-back-btn:hover { border-color: #ffcc44; color: #ffcc44; }
+
+    /* ─── Achievement Toast ─── */
+    #achievement-toast {
+      position: absolute; top: -60px; left: 50%; transform: translateX(-50%);
+      background: rgba(20, 15, 5, 0.9); border: 1px solid rgba(255,204,68,0.4);
+      border-radius: 8px; padding: 10px 20px; display: flex; align-items: center; gap: 10px;
+      transition: top 0.4s ease; z-index: 500; pointer-events: none;
+    }
+    #achievement-toast.show { top: 20px; }
+    #achievement-toast .toast-icon { font-size: 22px; }
+    #achievement-toast .toast-text { font-size: 13px; color: #ffcc44; }
+    #achievement-toast .toast-reward { font-size: 11px; color: #ffcc44; opacity: 0.7; }
+
+    /* ─── Event Banner ─── */
+    #event-banner {
+      position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+      font-size: 16px; font-weight: bold; padding: 8px 24px;
+      border-radius: 6px; display: none; z-index: 60;
+      text-align: center; letter-spacing: 1px;
+      animation: bannerPulse 1s ease-in-out infinite;
+    }
+    @keyframes bannerPulse { 0%,100%{opacity:0.8;} 50%{opacity:1;} }
+    .event-gold { color: #ffcc44; background: rgba(255,204,68,0.12); border: 1px solid rgba(255,204,68,0.3); text-shadow: 0 0 10px rgba(255,204,68,0.4); }
+    .event-red { color: #ff4466; background: rgba(255,68,102,0.12); border: 1px solid rgba(255,68,102,0.3); text-shadow: 0 0 10px rgba(255,68,102,0.4); }
+    .event-blue { color: #44aaff; background: rgba(68,170,255,0.12); border: 1px solid rgba(68,170,255,0.3); text-shadow: 0 0 10px rgba(68,170,255,0.4); }
+    .event-green { color: #44ff88; background: rgba(68,255,136,0.12); border: 1px solid rgba(68,255,136,0.3); text-shadow: 0 0 10px rgba(68,255,136,0.4); }
+
+    /* ─── Party Screen ─── */
+    #party-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, rgba(10,15,40,0.97) 0%, rgba(5,5,15,0.99) 100%);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: auto; z-index: 108;
+    }
+    #party-screen h2 {
+      font-size: 24px; color: #44aaff; margin-bottom: 20px;
+      text-shadow: 0 0 20px rgba(68,170,255,0.5); letter-spacing: 3px;
+    }
+    .party-options { display: flex; gap: 12px; margin-bottom: 20px; }
+    .party-btn {
+      padding: 12px 28px; font-size: 14px; background: transparent;
+      border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 8px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .party-btn:hover { border-color: #44aaff; color: #44aaff; }
+    #party-code-display {
+      font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #44aaff;
+      text-shadow: 0 0 20px rgba(68,170,255,0.5);
+      margin: 16px 0; display: none;
+    }
+    #party-code-input {
+      padding: 10px 20px; font-size: 20px; letter-spacing: 6px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 6px; text-align: center; outline: none;
+      width: 180px; margin: 16px 0; display: none; text-transform: uppercase;
+    }
+    #party-code-input:focus { border-color: #44aaff; }
+    #party-members-list {
+      font-size: 13px; opacity: 0.7; margin: 10px 0; display: none;
+      text-align: center;
+    }
+    #party-start-btn {
+      padding: 10px 36px; font-size: 16px; background: transparent;
+      border: 2px solid #44ffaa; color: #44ffaa; border-radius: 8px;
+      cursor: pointer; transition: all 0.15s; display: none;
+    }
+    #party-start-btn:hover { background: rgba(68,255,170,0.12); }
+    #party-join-confirm-btn {
+      padding: 10px 28px; font-size: 14px; background: transparent;
+      border: 1px solid #44aaff; color: #44aaff; border-radius: 6px;
+      cursor: pointer; transition: all 0.15s; display: none;
+    }
+    #party-copy-btn {
+      padding: 6px 16px; font-size: 12px; background: transparent;
+      border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px;
+      cursor: pointer; transition: all 0.15s; display: none;
+    }
+    #party-copy-btn:hover { border-color: #44aaff; }
+    #party-back-btn {
+      margin-top: 16px; padding: 8px 24px; font-size: 13px;
+      background: transparent; border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 6px; cursor: pointer; transition: all 0.15s;
+    }
+    #party-back-btn:hover { border-color: #fff; }
+    #party-status { font-size: 12px; opacity: 0.5; margin: 8px 0; }
 
     #title-screen {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -410,6 +643,16 @@
       .mobile-action-btn { width: 36px; height: 36px; right: 8px; }
       #chat-toggle-btn { bottom: 110px; }
       #ping-btn { bottom: 152px; }
+
+      /* Shop / Char / Ach screens */
+      .shop-card { width: 100px; padding: 10px; }
+      .shop-card .shop-icon { font-size: 20px; }
+      .shop-card .shop-name { font-size: 10px; }
+      .char-card { width: 110px; padding: 12px; }
+      .char-card .char-shape { font-size: 28px; }
+      #ach-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+      #party-code-display { font-size: 28px; }
+      #event-banner { font-size: 13px; padding: 6px 16px; }
     }
   </style>
 </head>
@@ -425,11 +668,16 @@
         <button class="mode-btn" id="mode-multi">MULTIPLAYER</button>
       </div>
       <button id="start-btn">START</button>
+      <div style="margin-top:12px; display:flex; gap:10px;">
+        <button class="mode-btn" id="shop-btn">SHOP</button>
+        <button class="mode-btn" id="ach-btn">ACHIEVEMENTS</button>
+      </div>
       <div class="controls-hint" id="controls-hint">WASD or Arrow Keys to move · ESC to pause</div>
       <div style="margin-top:20px; display:flex; gap:8px;">
         <button class="lang-btn" data-lang="en" style="padding:6px 16px; background:transparent; border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:4px; cursor:pointer; font-size:13px;">EN</button>
         <button class="lang-btn" data-lang="ko" style="padding:6px 16px; background:transparent; border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:4px; cursor:pointer; font-size:13px;">한국어</button>
       </div>
+      <div id="title-coins" style="margin-top:12px; font-size:14px; color:#ffcc44; text-shadow:0 0 8px rgba(255,204,68,0.3);"></div>
     </div>
     <div id="hud" style="display:none;">
       <div class="bar-container"><div id="hp-fill" class="bar-fill"></div></div>
@@ -487,8 +735,66 @@
     <div id="game-over-screen">
       <h2>GAME OVER</h2>
       <div id="game-over-stats"></div>
+      <div id="game-over-coins"></div>
       <button id="restart-btn">RESTART</button>
     </div>
+
+    <!-- Shop Screen -->
+    <div id="shop-screen">
+      <h2 id="shop-title">SHOP</h2>
+      <div id="shop-coins"></div>
+      <div id="shop-upgrades"></div>
+      <button id="shop-back-btn">BACK</button>
+    </div>
+
+    <!-- Character Select -->
+    <div id="character-select-screen">
+      <h2 id="char-select-title">SELECT CHARACTER</h2>
+      <div id="char-cards"></div>
+      <button id="char-select-btn">SELECT</button>
+      <button id="char-back-btn">BACK</button>
+    </div>
+
+    <!-- Achievement Screen -->
+    <div id="achievement-screen">
+      <h2 id="ach-title">ACHIEVEMENTS</h2>
+      <div id="daily-section"><h3 id="daily-title">DAILY CHALLENGES</h3><div id="daily-list"></div></div>
+      <div id="ach-grid"></div>
+      <button id="ach-back-btn">BACK</button>
+    </div>
+
+    <!-- Achievement Toast -->
+    <div id="achievement-toast">
+      <span class="toast-icon"></span>
+      <div>
+        <div class="toast-text"></div>
+        <div class="toast-reward"></div>
+      </div>
+    </div>
+
+    <!-- Event Banner -->
+    <div id="event-banner"></div>
+
+    <!-- Party Screen -->
+    <div id="party-screen">
+      <h2>MULTIPLAYER</h2>
+      <div class="party-options">
+        <button class="party-btn" id="party-create-btn">CREATE PARTY</button>
+        <button class="party-btn" id="party-join-btn">JOIN PARTY</button>
+        <button class="party-btn" id="party-quick-btn">QUICK START</button>
+      </div>
+      <div id="party-code-display"></div>
+      <button id="party-copy-btn">COPY</button>
+      <input type="text" id="party-code-input" maxlength="4" placeholder="CODE" />
+      <button id="party-join-confirm-btn">JOIN</button>
+      <div id="party-status"></div>
+      <div id="party-members-list"></div>
+      <button id="party-start-btn">START GAME</button>
+      <button id="party-back-btn">BACK</button>
+    </div>
+
+    <!-- Coin HUD (in-game) -->
+    <div id="coin-display"></div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

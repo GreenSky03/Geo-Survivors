@@ -9,6 +9,8 @@ import type {
   S2C_BossSpawn, S2C_BossUpdate, S2C_BossDead,
   S2C_TeamScores, S2C_Leaderboard, S2C_PvpDamage,
   S2C_PingSignal, S2C_WaveEvent, WeaponSyncData,
+  S2C_EventWave, S2C_EventWaveEnd, S2C_MiniBossSpawn,
+  S2C_PartyCreated, S2C_PartyJoined, S2C_PartyMemberJoin, S2C_PartyMemberLeave, S2C_PartyError,
 } from '../shared/protocol';
 import { TEAMS, MAP_HALF_W, MAP_HALF_H } from '../shared/protocol';
 
@@ -31,6 +33,15 @@ const FF_SLOW_FACTOR = 0.5;  // 50% slow when inside ForceField
 const WAVE_EVENT_INTERVAL = 60;
 // Elite spawn chance (per spawn cycle)
 const ELITE_CHANCE = 0.08;
+
+// Mini-boss interval (seconds)
+const MINI_BOSS_INTERVAL_S = 90;
+
+// Event wave system interval (seconds) - distinct from regular wave events
+const EVENT_WAVE_INTERVAL_S = 120;
+
+// Party system
+const MAX_PARTY_SIZE = 4;
 
 // ─── Enemy Definitions (mirrored from client) ──
 interface EnemyDef {
@@ -106,6 +117,30 @@ interface Room {
   // Wave event
   nextWaveEventTime: number;
   waveEventCount: number;
+  // Mini-boss timer
+  nextMiniBossTime: number;
+  // Event wave timer
+  nextEventWaveTime: number;
+  activeEvent: { type: string; timer: number } | null;
+}
+
+// ─── Party System ─────────────────────────
+interface Party {
+  code: string;
+  leaderId: string;
+  members: Map<string, { ws: WebSocket; name: string }>;
+  team: Team;
+}
+
+const parties = new Map<string, Party>();
+
+function generatePartyCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  // Ensure unique
+  if (parties.has(code)) return generatePartyCode();
+  return code;
 }
 
 const rooms = new Map<string, Room>();
@@ -179,6 +214,9 @@ function findOrCreateRoom(preferCode?: string): Room {
     scoreAccum: 0,
     nextWaveEventTime: WAVE_EVENT_INTERVAL,
     waveEventCount: 0,
+    nextMiniBossTime: MINI_BOSS_INTERVAL_S,
+    nextEventWaveTime: EVENT_WAVE_INTERVAL_S,
+    activeEvent: null,
   };
   rooms.set(code, room);
   console.log(`Room created: ${code}`);
@@ -377,6 +415,113 @@ function spawnBoss(room: Room): void {
   };
   broadcast(room, msg);
   console.log(`[${room.code}] Boss #${room.bossIndex - 1} spawned (${hp} HP)`);
+}
+
+// ─── Mini-Boss Spawning ─────────────────────
+function spawnMiniBoss(room: Room): void {
+  const centroid = getPlayerCentroid(room);
+  if (!centroid) return;
+
+  const types = ['charger', 'pentagon', 'square'];
+  const typeKey = types[Math.floor(Math.random() * types.length)];
+  const bossTypes = ['charger_elite', 'splitter_king', 'shield_bearer'];
+  const bossType = bossTypes[Math.floor(Math.random() * bossTypes.length)];
+
+  const angle = Math.random() * Math.PI * 2;
+  const bx = centroid.x + Math.cos(angle) * 400;
+  const by = centroid.y + Math.sin(angle) * 400;
+
+  const difficulty = getRoomDifficulty(room);
+  let hpMult = 6;
+  let speedMult = 1.0;
+  let xpMult = 5;
+
+  switch (bossType) {
+    case 'charger_elite': hpMult = 6; speedMult = 2.5; xpMult = 5; break;
+    case 'splitter_king': hpMult = 8; speedMult = 1.0; xpMult = 6; break;
+    case 'shield_bearer': hpMult = 10; speedMult = 0.8; xpMult = 8; break;
+  }
+
+  const def = ENEMY_DEFS[typeKey] || ENEMY_DEFS.pentagon;
+  const hp = Math.floor(def.hp * difficulty * hpMult * Math.max(1, room.players.size * 0.3));
+  const speed = def.speed * speedMult;
+  const xp = Math.floor(def.xp * xpMult);
+
+  const enemy = createRoomEnemy(room, typeKey, bx, by, {
+    hpOverride: hp, speedOverride: speed, xpOverride: xp, isElite: true,
+  });
+  room.enemies.set(enemy.id, enemy);
+
+  const se: ServerEnemy = {
+    id: enemy.id, type: typeKey, x: enemy.x, y: enemy.y,
+    hp, maxHp: hp, isBoss: false, isElite: true,
+  };
+
+  const msg: S2C_MiniBossSpawn = {
+    type: 'mini_boss_spawn',
+    enemy: se,
+    bossType,
+  };
+  broadcast(room, msg);
+  console.log(`[${room.code}] Mini-boss "${bossType}" spawned (${hp} HP)`);
+}
+
+// ─── Event Wave System ──────────────────────
+function triggerEventWave(room: Room): void {
+  const events = ['gold_rush', 'elite_invasion', 'boss_rush', 'healing_rain'];
+  const event = events[Math.floor(Math.random() * events.length)] as string;
+
+  let duration = 0;
+  switch (event) {
+    case 'gold_rush': duration = 15; break;
+    case 'elite_invasion': duration = 20; break;
+    case 'boss_rush': duration = 0; break; // instant
+    case 'healing_rain': duration = 12; break;
+  }
+
+  // Broadcast event start
+  if (duration > 0) {
+    room.activeEvent = { type: event, timer: duration };
+    const startMsg: S2C_EventWave = {
+      type: 'event_wave_start',
+      event: event as any,
+      duration,
+    };
+    broadcast(room, startMsg);
+  }
+
+  // Apply event effects
+  switch (event) {
+    case 'elite_invasion': {
+      // Spawn 8 elite enemies
+      const centroid = getPlayerCentroid(room);
+      if (centroid) {
+        for (let i = 0; i < 8 && room.enemies.size < MAX_ENEMIES; i++) {
+          const a = (Math.PI * 2 / 8) * i;
+          const d = 400 + Math.random() * 200;
+          const ex = centroid.x + Math.cos(a) * d;
+          const ey = centroid.y + Math.sin(a) * d;
+          const typeKey = pickEnemyType(room.serverTime);
+          const enemy = createRoomEnemy(room, typeKey, ex, ey, { isElite: true });
+          room.enemies.set(enemy.id, enemy);
+          broadcast(room, {
+            type: 'enemy_spawn',
+            enemy: { id: enemy.id, type: typeKey, x: enemy.x, y: enemy.y, hp: enemy.hp, maxHp: enemy.maxHp, isBoss: false, isElite: true },
+          } as S2C_EnemySpawn);
+        }
+      }
+      break;
+    }
+    case 'boss_rush':
+      // Spawn 2 mini-bosses
+      spawnMiniBoss(room);
+      spawnMiniBoss(room);
+      // Broadcast as event banner (short duration)
+      broadcast(room, { type: 'event_wave_start', event: 'boss_rush', duration: 5 } as S2C_EventWave);
+      break;
+  }
+
+  console.log(`[${room.code}] Event wave: ${event} (${duration}s)`);
 }
 
 // ─── Enemy Movement (server-side) ───────────
@@ -661,9 +806,20 @@ wss.on('connection', (ws: WebSocket) => {
     try { switch (msg.type) {
       case 'join': {
         playerId = generateId();
-        const room = findOrCreateRoom(msg.roomCode);
+        // Check if player is in a party and should be assigned to a specific room/team
+        let partyTeam: Team | null = null;
+        let partyRoomCode: string | undefined = msg.roomCode;
+        const partyCode = (ws as any).__partyCode as string | undefined;
+        if (partyCode) {
+          const party = parties.get(partyCode);
+          if (party && (party as any).roomCode) {
+            partyRoomCode = (party as any).roomCode;
+            partyTeam = (party as any).forcedTeam || null;
+          }
+        }
+        const room = findOrCreateRoom(partyRoomCode);
         playerRoom = room;
-        const team = getSmallestTeam(room);
+        const team = partyTeam || getSmallestTeam(room);
 
         const playerData: PlayerData = {
           id: playerId,
@@ -849,6 +1005,70 @@ wss.on('connection', (ws: WebSocket) => {
         }
         break;
       }
+
+      case 'create_party': {
+        const code = generatePartyCode();
+        const party: Party = {
+          code,
+          leaderId: playerId,
+          members: new Map(),
+          team: 'blue',
+        };
+        // Get name from existing room player data
+        const pName = playerRoom?.players.get(playerId)?.data.name || 'Player';
+        party.members.set(playerId, { ws, name: pName });
+        parties.set(code, party);
+        // Store party code on player for lookup
+        (ws as any).__partyCode = code;
+        const createdMsg: S2C_PartyCreated = { type: 'party_created', code };
+        send(ws, createdMsg);
+        console.log(`Party created: ${code} by ${pName}`);
+        break;
+      }
+
+      case 'join_party': {
+        const partyCode = msg.code.toUpperCase();
+        const party = parties.get(partyCode);
+        if (!party) {
+          send(ws, { type: 'party_error', reason: 'Party not found' } as S2C_PartyError);
+          break;
+        }
+        if (party.members.size >= MAX_PARTY_SIZE) {
+          send(ws, { type: 'party_error', reason: 'Party is full' } as S2C_PartyError);
+          break;
+        }
+        const pName = playerRoom?.players.get(playerId)?.data.name || 'Player';
+        party.members.set(playerId, { ws, name: pName });
+        (ws as any).__partyCode = partyCode;
+        // Notify joiner
+        const memberNames = Array.from(party.members.values()).map(m => m.name);
+        const joinedMsg: S2C_PartyJoined = { type: 'party_joined', code: partyCode, members: memberNames };
+        send(ws, joinedMsg);
+        // Notify others
+        const joinNotify: S2C_PartyMemberJoin = { type: 'party_member_join', name: pName };
+        for (const [mid, m] of party.members) {
+          if (mid !== playerId) send(m.ws, joinNotify);
+        }
+        console.log(`${pName} joined party ${partyCode} (${party.members.size} members)`);
+        break;
+      }
+
+      case 'party_start': {
+        const partyCode = (ws as any).__partyCode as string | undefined;
+        if (!partyCode) break;
+        const party = parties.get(partyCode);
+        if (!party || party.leaderId !== playerId) break;
+        // All party members join the same room with the same team
+        const room = findOrCreateRoom();
+        const team = getSmallestTeam(room);
+        party.team = team;
+        // The leader's join will happen normally when they connect
+        // Store party room info for subsequent joins
+        (party as any).roomCode = room.code;
+        (party as any).forcedTeam = team;
+        console.log(`Party ${partyCode} starting in room ${room.code}, team ${team}`);
+        break;
+      }
     } } catch (err) {
       console.error(`Error handling message from ${playerId}:`, err);
     }
@@ -860,12 +1080,41 @@ wss.on('connection', (ws: WebSocket) => {
 
   ws.on('close', () => {
     if (playerRoom && playerId) {
+      const sp = playerRoom.players.get(playerId);
+      const playerName = sp?.data.name || playerId;
       playerRoom.players.delete(playerId);
       broadcast(playerRoom, { type: 'player_leave', id: playerId });
-      console.log(`[${playerRoom.code}] Player ${playerId} left (${playerRoom.players.size} remain)`);
+      console.log(`[${playerRoom.code}] Player ${playerName} left (${playerRoom.players.size} remain)`);
       if (playerRoom.players.size === 0) {
         rooms.delete(playerRoom.code);
         console.log(`Room ${playerRoom.code} deleted (empty)`);
+      }
+    }
+
+    // Handle party cleanup
+    const partyCode = (ws as any).__partyCode as string | undefined;
+    if (partyCode) {
+      const party = parties.get(partyCode);
+      if (party) {
+        const member = party.members.get(playerId);
+        const memberName = member?.name || 'Unknown';
+        party.members.delete(playerId);
+
+        // Notify remaining party members
+        const leaveMsg: S2C_PartyMemberLeave = { type: 'party_member_leave', name: memberName };
+        for (const m of party.members.values()) send(m.ws, leaveMsg);
+
+        // Transfer leadership
+        if (party.leaderId === playerId && party.members.size > 0) {
+          const [newLeaderId] = party.members.keys();
+          party.leaderId = newLeaderId;
+        }
+
+        // Delete empty party
+        if (party.members.size === 0) {
+          parties.delete(partyCode);
+          console.log(`Party ${partyCode} deleted (empty)`);
+        }
       }
     }
   });
@@ -901,6 +1150,28 @@ setInterval(() => {
     // Boss spawn
     if (!room.boss.active && room.serverTime >= room.nextBossTime) {
       spawnBoss(room);
+    }
+
+    // Mini-boss spawn (every 90s after 60s)
+    if (room.serverTime > 60 && room.serverTime >= room.nextMiniBossTime) {
+      room.nextMiniBossTime = room.serverTime + MINI_BOSS_INTERVAL_S;
+      spawnMiniBoss(room);
+    }
+
+    // Event wave (every 120s after 60s)
+    if (room.serverTime > 60 && room.serverTime >= room.nextEventWaveTime) {
+      room.nextEventWaveTime = room.serverTime + EVENT_WAVE_INTERVAL_S;
+      triggerEventWave(room);
+    }
+
+    // Active event timer decay
+    if (room.activeEvent) {
+      room.activeEvent.timer -= TICK_S;
+      if (room.activeEvent.timer <= 0) {
+        const endMsg: S2C_EventWaveEnd = { type: 'event_wave_end', event: room.activeEvent.type };
+        broadcast(room, endMsg);
+        room.activeEvent = null;
+      }
     }
 
     // Update enemy positions

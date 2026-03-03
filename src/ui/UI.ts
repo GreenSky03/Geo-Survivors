@@ -2,6 +2,9 @@ import { UpgradeChoice } from '../systems/LevelUpSystem';
 import { WeaponBase } from '../weapons/WeaponBase';
 import { t, setLang, getLang, detectLang, Lang } from '../systems/i18n';
 import { MAP_HALF_W, MAP_HALF_H } from '../../shared/protocol';
+import { MetaProgression, META_UPGRADES } from '../systems/MetaProgression';
+import { CHARACTERS, CharacterDef } from '../systems/CharacterSystem';
+import { ACHIEVEMENTS, AchievementDef, getDailyChallenges, DailyChallengeDef, getTodayDateStr } from '../systems/AchievementSystem';
 
 export class UI {
   private hpFill: HTMLElement;
@@ -16,6 +19,7 @@ export class UI {
   private gameOverScreen: HTMLElement;
   private gameOverStats: HTMLElement;
   private gameOverTitle: HTMLElement;
+  private gameOverCoins: HTMLElement;
   private restartBtn: HTMLElement;
   private titleScreen: HTMLElement;
   private startBtn: HTMLElement;
@@ -44,6 +48,15 @@ export class UI {
   private onChatSendCallback: ((msg: string) => void) | null = null;
   private onChatCloseCallback: (() => void) | null = null;
 
+  // ─── New feature callbacks ───
+  private onCharacterSelectCallback: ((charId: string) => void) | null = null;
+  private onPartyCreateCallback: (() => void) | null = null;
+  private onPartyJoinCallback: ((code: string) => void) | null = null;
+  private onPartyQuickCallback: (() => void) | null = null;
+  private onPartyStartCallback: (() => void) | null = null;
+
+  private selectedCharacterId = 'warrior';
+
   constructor() {
     this.hpFill = document.getElementById('hp-fill')!;
     this.xpFill = document.getElementById('xp-fill')!;
@@ -57,6 +70,7 @@ export class UI {
     this.gameOverScreen = document.getElementById('game-over-screen')!;
     this.gameOverStats = document.getElementById('game-over-stats')!;
     this.gameOverTitle = this.gameOverScreen.querySelector('h2')!;
+    this.gameOverCoins = document.getElementById('game-over-coins')!;
     this.restartBtn = document.getElementById('restart-btn')!;
     this.titleScreen = document.getElementById('title-screen')!;
     this.startBtn = document.getElementById('start-btn')!;
@@ -122,6 +136,65 @@ export class UI {
       }
     });
 
+    // Shop button
+    document.getElementById('shop-btn')!.addEventListener('click', () => {
+      // Will be handled externally via callback
+    });
+
+    // Achievement button
+    document.getElementById('ach-btn')!.addEventListener('click', () => {
+      // Will be handled externally via callback
+    });
+
+    // Shop back
+    document.getElementById('shop-back-btn')!.addEventListener('click', () => {
+      this.hideShop();
+    });
+
+    // Achievement back
+    document.getElementById('ach-back-btn')!.addEventListener('click', () => {
+      this.hideAchievements();
+    });
+
+    // Character select
+    document.getElementById('char-select-btn')!.addEventListener('click', () => {
+      if (this.onCharacterSelectCallback) {
+        this.onCharacterSelectCallback(this.selectedCharacterId);
+      }
+    });
+    document.getElementById('char-back-btn')!.addEventListener('click', () => {
+      this.hideCharacterSelect();
+      this.showTitle();
+    });
+
+    // Party UI
+    document.getElementById('party-create-btn')!.addEventListener('click', () => {
+      if (this.onPartyCreateCallback) this.onPartyCreateCallback();
+    });
+    document.getElementById('party-join-btn')!.addEventListener('click', () => {
+      this.showPartyJoinInput();
+    });
+    document.getElementById('party-quick-btn')!.addEventListener('click', () => {
+      if (this.onPartyQuickCallback) this.onPartyQuickCallback();
+    });
+    document.getElementById('party-join-confirm-btn')!.addEventListener('click', () => {
+      const code = (document.getElementById('party-code-input') as HTMLInputElement).value.trim().toUpperCase();
+      if (code.length === 4 && this.onPartyJoinCallback) {
+        this.onPartyJoinCallback(code);
+      }
+    });
+    document.getElementById('party-copy-btn')!.addEventListener('click', () => {
+      const code = document.getElementById('party-code-display')!.textContent || '';
+      navigator.clipboard.writeText(code).catch(() => {});
+    });
+    document.getElementById('party-start-btn')!.addEventListener('click', () => {
+      if (this.onPartyStartCallback) this.onPartyStartCallback();
+    });
+    document.getElementById('party-back-btn')!.addEventListener('click', () => {
+      this.hideParty();
+      this.showTitle();
+    });
+
     // Auto-detect language
     setLang(detectLang());
     this.applyLang();
@@ -133,6 +206,12 @@ export class UI {
     this.startBtn.textContent = t('title.start');
     this.controlsHint.textContent = t('title.controls');
     this.restartBtn.textContent = t('gameover.restart');
+
+    // Title buttons
+    const shopBtn = document.getElementById('shop-btn');
+    if (shopBtn) shopBtn.textContent = t('shop.btn');
+    const achBtn = document.getElementById('ach-btn');
+    if (achBtn) achBtn.textContent = t('ach.btn');
 
     // Highlight active lang button
     const langBtns = document.querySelectorAll('.lang-btn');
@@ -147,6 +226,23 @@ export class UI {
     this.onStartCallback = cb;
   }
 
+  onShopClick(cb: () => void): void {
+    document.getElementById('shop-btn')!.addEventListener('click', cb);
+  }
+
+  onAchievementClick(cb: () => void): void {
+    document.getElementById('ach-btn')!.addEventListener('click', cb);
+  }
+
+  onCharacterSelect(cb: (charId: string) => void): void {
+    this.onCharacterSelectCallback = cb;
+  }
+
+  onPartyCreate(cb: () => void): void { this.onPartyCreateCallback = cb; }
+  onPartyJoin(cb: (code: string) => void): void { this.onPartyJoinCallback = cb; }
+  onPartyQuick(cb: () => void): void { this.onPartyQuickCallback = cb; }
+  onPartyStart(cb: () => void): void { this.onPartyStartCallback = cb; }
+
   showTitle(): void {
     this.titleScreen.style.display = 'flex';
     this.hud.style.display = 'none';
@@ -157,6 +253,11 @@ export class UI {
     this.titleScreen.style.display = 'none';
     this.hud.style.display = 'block';
     this.weaponHud.style.display = 'flex';
+  }
+
+  updateTitleCoins(coins: number): void {
+    const el = document.getElementById('title-coins');
+    if (el) el.textContent = `◆ ${coins}`;
   }
 
   updateHp(current: number, max: number): void {
@@ -266,6 +367,7 @@ export class UI {
   showGameOver(stats: {
     time: number; kills: number; level: number;
     totalDamage?: number; wave?: number; pickups?: number;
+    coinsEarned?: number;
   }, onRestart: () => void): void {
     this.onRestartCallback = onRestart;
     this.gameOverTitle.textContent = t('gameover.title');
@@ -284,6 +386,15 @@ export class UI {
     if (dps) html += `<br>DPS: ${dps.toLocaleString()}`;
     if (stats.pickups) html += `<br>Pickups: ${stats.pickups}`;
     this.gameOverStats.innerHTML = html;
+
+    // Show coins earned
+    if (stats.coinsEarned !== undefined && stats.coinsEarned > 0) {
+      this.gameOverCoins.textContent = `◆ +${stats.coinsEarned} ${t('gameover.coins')}`;
+      this.gameOverCoins.style.display = 'block';
+    } else {
+      this.gameOverCoins.style.display = 'none';
+    }
+
     this.gameOverScreen.style.display = 'flex';
   }
 
@@ -434,13 +545,11 @@ export class UI {
     document.getElementById('ping-display')!.style.display = show ? 'block' : 'none';
     document.getElementById('ping-hint')!.style.display = show ? 'block' : 'none';
     document.getElementById('chat-panel')!.style.display = show ? 'block' : 'none';
-    // Show chat/ping buttons on touch devices only
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     document.getElementById('chat-toggle-btn')!.style.display =
       show && isTouchDevice ? 'flex' : 'none';
     document.getElementById('ping-btn')!.style.display =
       show && isTouchDevice ? 'flex' : 'none';
-    // Hide keyboard-only hint on touch devices
     if (isTouchDevice) {
       document.getElementById('ping-hint')!.style.display = 'none';
     }
@@ -459,11 +568,9 @@ export class UI {
     entry.className = 'kill-log-entry';
     entry.innerHTML = `<span style="color:${teamColors[killerTeam] || '#fff'}">${killerName}</span> killed ${victimName}`;
     el.appendChild(entry);
-    // Keep max 5 entries
     while (el.children.length > 5) {
       el.removeChild(el.children[0]);
     }
-    // Auto-remove after 5s
     setTimeout(() => { if (entry.parentNode) entry.parentNode.removeChild(entry); }, 5000);
   }
 
@@ -593,19 +700,272 @@ export class UI {
     const teamColors: Record<string, string> = { blue: '#4488ff', red: '#ff4466', green: '#44ff88', yellow: '#ffcc44' };
     const el = document.createElement('div');
     el.className = 'chat-msg';
-    // HTML escape
     const safe = msg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     el.innerHTML = `<span style="color:${teamColors[team] || '#fff'}">${name.replace(/</g, '&lt;')}</span>: ${safe}`;
     container.appendChild(el);
 
-    // Keep max 10 messages
     while (container.children.length > 10) {
       container.removeChild(container.children[0]);
     }
 
-    // Fade after 8s, remove after 15s
     setTimeout(() => { el.classList.add('fading'); }, 8000);
     setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 15000);
+  }
+
+  // ═════════════════════════════════════
+  // ─── SHOP ───────────────────────────
+  // ═════════════════════════════════════
+  showShop(meta: MetaProgression): void {
+    const screen = document.getElementById('shop-screen')!;
+    document.getElementById('shop-title')!.textContent = t('shop.title');
+    document.getElementById('shop-back-btn')!.textContent = t('shop.back');
+
+    this.refreshShopContent(meta);
+    screen.style.display = 'flex';
+    this.titleScreen.style.display = 'none';
+  }
+
+  private refreshShopContent(meta: MetaProgression): void {
+    document.getElementById('shop-coins')!.textContent = `◆ ${meta.coins} ${t('shop.coins')}`;
+    const container = document.getElementById('shop-upgrades')!;
+    container.innerHTML = '';
+
+    for (const upgrade of META_UPGRADES) {
+      const tier = meta.getUpgradeTier(upgrade.id);
+      const isMax = tier >= upgrade.maxTier;
+
+      const card = document.createElement('div');
+      card.className = `shop-card${isMax ? ' maxed' : ''}`;
+
+      const cost = isMax ? '' : `◆ ${upgrade.costs[tier]}`;
+      const tierText = isMax ? t('shop.max') : `${t('shop.tier')} ${tier}/${upgrade.maxTier}`;
+      const valueText = tier > 0
+        ? (upgrade.id === 'meta_xp' ? `×${upgrade.values[tier - 1]}` :
+           upgrade.id === 'meta_armor' ? `${Math.round(upgrade.values[tier - 1] * 100)}%` :
+           `+${upgrade.values[tier - 1]}`)
+        : '';
+
+      card.innerHTML = `
+        <div class="shop-icon">${upgrade.icon}</div>
+        <div class="shop-name">${t(upgrade.nameKey)}</div>
+        <div class="shop-tier">${tierText}${valueText ? ` (${valueText})` : ''}</div>
+        <div class="shop-desc">${t(upgrade.descKey)}</div>
+        ${!isMax ? `<div class="shop-cost">${cost}</div>` : ''}
+      `;
+
+      if (!isMax) {
+        card.addEventListener('click', () => {
+          if (meta.purchaseUpgrade(upgrade.id)) {
+            this.refreshShopContent(meta);
+          }
+        });
+      }
+
+      container.appendChild(card);
+    }
+  }
+
+  hideShop(): void {
+    document.getElementById('shop-screen')!.style.display = 'none';
+    this.showTitle();
+  }
+
+  // ═════════════════════════════════════
+  // ─── CHARACTER SELECT ───────────────
+  // ═════════════════════════════════════
+  showCharacterSelect(meta: MetaProgression): void {
+    const screen = document.getElementById('character-select-screen')!;
+    document.getElementById('char-select-title')!.textContent = t('char.select.title');
+    document.getElementById('char-back-btn')!.textContent = t('shop.back');
+
+    const container = document.getElementById('char-cards')!;
+    container.innerHTML = '';
+
+    const shapeSymbols: Record<string, string> = {
+      triangle: '△', diamond: '◇', pentagon: '⬠', hexagon: '⬡',
+    };
+
+    for (const char of CHARACTERS) {
+      const unlocked = meta.isCharacterUnlocked(char.id);
+      const card = document.createElement('div');
+      card.className = `char-card${!unlocked ? ' locked' : ''}${char.id === this.selectedCharacterId ? ' selected' : ''}`;
+
+      const colorHex = '#' + char.color.toString(16).padStart(6, '0');
+      let html = `
+        <div class="char-shape" style="color:${colorHex}">${shapeSymbols[char.shape] || '●'}</div>
+        <div class="char-name">${t(char.nameKey)}</div>
+        <div class="char-desc">${t(char.descKey)}</div>
+      `;
+
+      if (!unlocked) {
+        html += `<span class="char-lock">🔒</span>`;
+        html += `<div class="char-unlock-cost">◆ ${char.unlockCost}</div>`;
+      }
+
+      card.innerHTML = html;
+
+      card.addEventListener('click', () => {
+        if (!unlocked) {
+          // Try to unlock
+          if (meta.unlockCharacter(char.id, char.unlockCost)) {
+            this.showCharacterSelect(meta); // Refresh
+          }
+          return;
+        }
+        // Select
+        this.selectedCharacterId = char.id;
+        container.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+
+      container.appendChild(card);
+    }
+
+    screen.style.display = 'flex';
+    this.titleScreen.style.display = 'none';
+  }
+
+  hideCharacterSelect(): void {
+    document.getElementById('character-select-screen')!.style.display = 'none';
+  }
+
+  getSelectedCharacterId(): string {
+    return this.selectedCharacterId;
+  }
+
+  // ═════════════════════════════════════
+  // ─── ACHIEVEMENTS ───────────────────
+  // ═════════════════════════════════════
+  showAchievements(meta: MetaProgression): void {
+    const screen = document.getElementById('achievement-screen')!;
+    document.getElementById('ach-title')!.textContent = t('ach.title');
+    document.getElementById('daily-title')!.textContent = t('ach.daily.title');
+    document.getElementById('ach-back-btn')!.textContent = t('ach.back');
+
+    // Daily challenges
+    const today = getTodayDateStr();
+    meta.setDailyDate(today);
+    const dailies = getDailyChallenges();
+    const completedDailies = new Set(meta.getDailyCompleted());
+
+    const dailyList = document.getElementById('daily-list')!;
+    dailyList.innerHTML = '';
+    for (const daily of dailies) {
+      const item = document.createElement('div');
+      item.className = `daily-item${completedDailies.has(daily.id) ? ' completed' : ''}`;
+      item.innerHTML = `
+        <span>${t(daily.descKey)}</span>
+        <span class="daily-reward">◆ ${daily.reward}</span>
+      `;
+      dailyList.appendChild(item);
+    }
+
+    // Achievements grid
+    const grid = document.getElementById('ach-grid')!;
+    grid.innerHTML = '';
+    for (const ach of ACHIEVEMENTS) {
+      const unlocked = meta.isAchievementUnlocked(ach.id);
+      const item = document.createElement('div');
+      item.className = `ach-item${unlocked ? ' unlocked' : ' locked'}`;
+      item.innerHTML = `
+        <div class="ach-icon">${unlocked ? ach.icon : '🔒'}</div>
+        <div class="ach-name">${t(ach.nameKey)}</div>
+        <div class="ach-desc">${t(ach.descKey)}</div>
+        <div class="ach-reward">◆ ${ach.reward}</div>
+      `;
+      grid.appendChild(item);
+    }
+
+    screen.style.display = 'flex';
+    this.titleScreen.style.display = 'none';
+  }
+
+  hideAchievements(): void {
+    document.getElementById('achievement-screen')!.style.display = 'none';
+    this.showTitle();
+  }
+
+  // ─── Achievement Toast ─────────────
+  showAchievementToast(name: string, icon: string, reward: number): void {
+    const toast = document.getElementById('achievement-toast')!;
+    toast.querySelector('.toast-icon')!.textContent = icon;
+    toast.querySelector('.toast-text')!.textContent = name;
+    toast.querySelector('.toast-reward')!.textContent = `◆ +${reward}`;
+    toast.classList.add('show');
+    setTimeout(() => { toast.classList.remove('show'); }, 3000);
+  }
+
+  // ═════════════════════════════════════
+  // ─── EVENT BANNER ───────────────────
+  // ═════════════════════════════════════
+  showEventBanner(text: string, colorClass: string, duration: number): void {
+    const banner = document.getElementById('event-banner')!;
+    banner.textContent = text;
+    banner.className = colorClass;
+    banner.style.display = 'block';
+    setTimeout(() => { banner.style.display = 'none'; }, duration * 1000);
+  }
+
+  hideEventBanner(): void {
+    document.getElementById('event-banner')!.style.display = 'none';
+  }
+
+  // ═════════════════════════════════════
+  // ─── PARTY ──────────────────────────
+  // ═════════════════════════════════════
+  showPartyScreen(): void {
+    const screen = document.getElementById('party-screen')!;
+    screen.style.display = 'flex';
+    this.titleScreen.style.display = 'none';
+    // Reset sub-elements
+    document.getElementById('party-code-display')!.style.display = 'none';
+    document.getElementById('party-code-input')!.style.display = 'none';
+    document.getElementById('party-join-confirm-btn')!.style.display = 'none';
+    document.getElementById('party-copy-btn')!.style.display = 'none';
+    document.getElementById('party-members-list')!.style.display = 'none';
+    document.getElementById('party-start-btn')!.style.display = 'none';
+    document.getElementById('party-status')!.textContent = '';
+  }
+
+  showPartyCode(code: string): void {
+    document.getElementById('party-code-display')!.textContent = code;
+    document.getElementById('party-code-display')!.style.display = 'block';
+    document.getElementById('party-copy-btn')!.style.display = 'inline-block';
+    document.getElementById('party-start-btn')!.style.display = 'inline-block';
+    document.getElementById('party-members-list')!.style.display = 'block';
+    document.getElementById('party-status')!.textContent = t('party.waiting');
+  }
+
+  showPartyJoinInput(): void {
+    document.getElementById('party-code-input')!.style.display = 'block';
+    document.getElementById('party-join-confirm-btn')!.style.display = 'inline-block';
+    (document.getElementById('party-code-input') as HTMLInputElement).focus();
+  }
+
+  updatePartyMembers(members: string[]): void {
+    const el = document.getElementById('party-members-list')!;
+    el.innerHTML = `<strong>${t('party.members')}:</strong><br>` + members.map(m => `• ${m}`).join('<br>');
+    el.style.display = 'block';
+  }
+
+  showPartyError(reason: string): void {
+    document.getElementById('party-status')!.textContent = reason;
+    document.getElementById('party-status')!.style.color = '#ff4466';
+  }
+
+  hideParty(): void {
+    document.getElementById('party-screen')!.style.display = 'none';
+  }
+
+  // ─── Coin HUD (in-game) ───
+  updateCoinDisplay(coins: number): void {
+    const el = document.getElementById('coin-display')!;
+    el.textContent = `◆ ${coins}`;
+    el.style.display = 'block';
+  }
+
+  hideCoinDisplay(): void {
+    document.getElementById('coin-display')!.style.display = 'none';
   }
 
   hideAll(): void {
@@ -616,5 +976,6 @@ export class UI {
     this.hideRespawnOverlay();
     this.closeChatInput();
     this.bossWarning.style.display = 'none';
+    this.hideEventBanner();
   }
 }

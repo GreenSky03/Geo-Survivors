@@ -22,6 +22,15 @@ export type NetEventMap = {
   chat: { name: string; team: Team; msg: string };
   ping_signal: { x: number; y: number; team: Team; playerName: string };
   wave_event: { waveNumber: number; enemyCount: number };
+  // New events
+  event_wave_start: { event: string; duration: number };
+  event_wave_end: { event: string };
+  mini_boss_spawn: { enemy: ServerEnemy; bossType: string };
+  party_created: { code: string };
+  party_joined: { code: string; members: string[] };
+  party_member_join: { name: string };
+  party_member_leave: { name: string };
+  party_error: { reason: string };
   connected: void;
   disconnected: void;
 };
@@ -129,6 +138,14 @@ export class NetworkManager {
       case 'chat': this.emit('chat', { name: msg.name, team: msg.team, msg: msg.msg }); break;
       case 'ping_signal': this.emit('ping_signal', { x: msg.x, y: msg.y, team: msg.team, playerName: msg.playerName }); break;
       case 'wave_event': this.emit('wave_event', { waveNumber: msg.waveNumber, enemyCount: msg.enemyCount }); break;
+      case 'event_wave_start': this.emit('event_wave_start', { event: (msg as any).event, duration: (msg as any).duration }); break;
+      case 'event_wave_end': this.emit('event_wave_end', { event: (msg as any).event }); break;
+      case 'mini_boss_spawn': this.emit('mini_boss_spawn', { enemy: (msg as any).enemy, bossType: (msg as any).bossType }); break;
+      case 'party_created': this.emit('party_created', { code: (msg as any).code }); break;
+      case 'party_joined': this.emit('party_joined', { code: (msg as any).code, members: (msg as any).members }); break;
+      case 'party_member_join': this.emit('party_member_join', { name: (msg as any).name }); break;
+      case 'party_member_leave': this.emit('party_member_leave', { name: (msg as any).name }); break;
+      case 'party_error': this.emit('party_error', { reason: (msg as any).reason }); break;
     }
   }
 
@@ -160,6 +177,18 @@ export class NetworkManager {
 
   sendChat(msg: string): void {
     this.send({ type: 'chat', msg });
+  }
+
+  sendCreateParty(): void {
+    this.send({ type: 'create_party' });
+  }
+
+  sendJoinParty(code: string): void {
+    this.send({ type: 'join_party', code });
+  }
+
+  sendPartyStart(): void {
+    this.send({ type: 'party_start' });
   }
 
   on<K extends keyof NetEventMap>(event: K, listener: Listener<NetEventMap[K]>): void {

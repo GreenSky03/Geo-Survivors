@@ -9,14 +9,23 @@ import { spawnBoss } from '../entities/Boss';
 import { RemotePlayer } from '../entities/RemotePlayer';
 import { WeaponBase } from '../weapons/WeaponBase';
 import { OrbitWeapon } from '../weapons/OrbitWeapon';
+import { BulletWeapon } from '../weapons/BulletWeapon';
+import { ChainLightning } from '../weapons/ChainLightning';
+import { ForceField } from '../weapons/ForceField';
+import { BoomerangWeapon } from '../weapons/BoomerangWeapon';
+import { HomingMissileWeapon } from '../weapons/HomingMissileWeapon';
 import { LevelUpSystem, UpgradeChoice } from '../systems/LevelUpSystem';
 import { ParticleSystem } from '../systems/ParticleSystem';
 import { ScreenShake } from '../systems/ScreenShake';
 import { DamageNumbers } from '../systems/DamageNumbers';
 import { SoundManager } from '../systems/SoundManager';
 import { Trail } from '../systems/Trail';
+import { MetaProgression } from '../systems/MetaProgression';
+import { getCharacterById, CHARACTERS } from '../systems/CharacterSystem';
+import { AchievementChecker, getDailyChallenges, getTodayDateStr, type GameRunStats } from '../systems/AchievementSystem';
 import { NetworkManager } from '../net/NetworkManager';
 import { UI } from '../ui/UI';
+import { t } from '../systems/i18n';
 import { randomAngle, distance } from '../utils/math';
 import type { Team, PlayerData, BossData, ServerEnemy, WeaponSyncData } from '../../shared/protocol';
 import { TEAM_COLORS, MAP_HALF_W, MAP_HALF_H } from '../../shared/protocol';
@@ -134,6 +143,18 @@ export class Game {
   // Death slow-motion effect
   private deathSlowTimer = 0;
   private deathSlowDuration = 0.3;
+
+  // ─── New Feature Systems ───
+  private meta!: MetaProgression;
+  private achievementChecker = new AchievementChecker();
+  private selectedCharacterId = 'warrior';
+  private bossKillsThisGame = 0;
+  private evolutionsThisGame = 0;
+
+  // Mini-boss & Event Wave (solo)
+  private miniBossTimer = 90;
+  private eventWaveTimer = 120;
+  private activeEvent: { type: string; timer: number } | null = null;
 
   async init(): Promise<void> {
     this.app = new Application();
@@ -277,6 +298,69 @@ export class Game {
       }
     });
 
+    // ─── Initialize meta progression ───
+    this.meta = new MetaProgression();
+    this.ui.updateTitleCoins(this.meta.coins);
+
+    // Shop button
+    this.ui.onShopClick(() => {
+      this.sound.init();
+      this.sound.playButtonClick();
+      this.ui.showShop(this.meta);
+    });
+
+    // Achievement button
+    this.ui.onAchievementClick(() => {
+      this.sound.init();
+      this.sound.playButtonClick();
+      this.ui.showAchievements(this.meta);
+    });
+
+    // Character select callback
+    this.ui.onCharacterSelect((charId: string) => {
+      this.selectedCharacterId = charId;
+      this.sound.playCardSelect();
+      this.ui.hideCharacterSelect();
+      // Actually start game
+      if (this.isMultiplayer) {
+        this.ui.showConnectionStatus('Connecting...');
+        this.pendingMultiStart = true;
+        this.connectMultiplayer();
+      } else {
+        this.startGame();
+      }
+    });
+
+    // Party callbacks
+    this.ui.onPartyCreate(() => {
+      this.sound.playButtonClick();
+      this.ui.showConnectionStatus('Creating party...');
+      this.pendingMultiStart = false;
+      this.isMultiplayer = true;
+      this.net.connect(WS_URL, this.playerName);
+      this.net.on('connected', () => {
+        this.net.sendCreateParty();
+      });
+    });
+    this.ui.onPartyJoin((code: string) => {
+      this.sound.playButtonClick();
+      this.ui.showConnectionStatus('Joining party...');
+      this.pendingMultiStart = false;
+      this.isMultiplayer = true;
+      this.net.connect(WS_URL, this.playerName, code);
+    });
+    this.ui.onPartyQuick(() => {
+      this.sound.playButtonClick();
+      this.isMultiplayer = true;
+      this.ui.showCharacterSelect(this.meta);
+    });
+    this.ui.onPartyStart(() => {
+      this.sound.playButtonClick();
+      this.net.sendPartyStart();
+      this.ui.hideParty();
+      this.ui.showCharacterSelect(this.meta);
+    });
+
     this.setupTitleUI();
 
     this.ui.showTitle();
@@ -284,14 +368,8 @@ export class Game {
       this.sound.init();
       const nameInput = document.getElementById('name-input') as HTMLInputElement;
       this.playerName = nameInput.value.trim() || 'Player';
-      if (this.isMultiplayer) {
-        // Wait for server connection before starting game
-        this.ui.showConnectionStatus('Connecting...');
-        this.pendingMultiStart = true;
-        this.connectMultiplayer();
-      } else {
-        this.startGame();
-      }
+      // Show character select screen instead of starting directly
+      this.ui.showCharacterSelect(this.meta);
     });
 
     this.setupNetworkHandlers();
@@ -553,6 +631,66 @@ export class Game {
       this.sound.playBossWarning();
     });
 
+    // ─── Event Wave (multiplayer) ─────────────
+    this.net.on('event_wave_start', (data) => {
+      const eventKey = `event.${data.event}`;
+      const colorClass = data.event === 'gold_rush' ? 'event-gold'
+        : data.event === 'healing_rain' ? 'event-green' : 'event-red';
+      this.ui.showEventBanner(t(eventKey), colorClass, data.duration);
+      this.sound.playEventWave();
+      this.activeEvent = { type: data.event, timer: data.duration };
+    });
+
+    this.net.on('event_wave_end', (_data) => {
+      this.ui.hideEventBanner();
+      this.activeEvent = null;
+    });
+
+    // ─── Mini Boss (multiplayer) ──────────────
+    this.net.on('mini_boss_spawn', (data) => {
+      this.createServerEnemy(data.enemy);
+      this.ui.showEventBanner(t('event.miniboss'), 'event-red', 3);
+      this.sound.playMiniBoss();
+      this.screenShake.trigger(8);
+    });
+
+    // ─── Party Events ─────────────────────────
+    this.net.on('party_created', (data) => {
+      this.ui.hideConnectionStatus();
+      this.ui.showPartyCode(data.code);
+    });
+
+    this.net.on('party_joined', (data) => {
+      this.ui.hideConnectionStatus();
+      this.ui.showPartyCode(data.code);
+      this.ui.updatePartyMembers(data.members);
+    });
+
+    this.net.on('party_member_join', (data) => {
+      this.sound.playButtonClick();
+      // Refresh member list from party screen
+      const memberList = document.getElementById('party-members');
+      if (memberList) {
+        const li = document.createElement('li');
+        li.textContent = data.name;
+        memberList.appendChild(li);
+      }
+    });
+
+    this.net.on('party_member_leave', (data) => {
+      // Remove member from list
+      const memberList = document.getElementById('party-members');
+      if (memberList) {
+        for (const li of Array.from(memberList.children)) {
+          if (li.textContent === data.name) { li.remove(); break; }
+        }
+      }
+    });
+
+    this.net.on('party_error', (data) => {
+      this.ui.showPartyError(data.reason);
+    });
+
     this.net.on('disconnected', () => {
       const attempt = this.net.reconnectCount;
       this.ui.showConnectionStatus(attempt > 0
@@ -628,6 +766,7 @@ export class Game {
     this.pausedByMenu = false;
     this.gameActive = false;
     this.started = false;
+    this.sound.stopBGM();
     this.saveHighscore();
     this.net.disconnect();
     for (const rp of this.remotePlayers.values()) {
@@ -637,7 +776,9 @@ export class Game {
     this.remotePlayers.clear();
     this.enemyById.clear();
     this.ui.hideAll();
+    this.ui.hideParty();
     this.ui.showMultiplayerUI(false);
+    this.ui.updateTitleCoins(this.meta.coins);
     this.ui.showTitle();
     this.input.showTouchControls(false);
   }
@@ -697,14 +838,52 @@ export class Game {
     this.damageNumbers = new DamageNumbers();
     this.trail = new Trail();
 
+    this.bossKillsThisGame = 0;
+    this.evolutionsThisGame = 0;
+    this.miniBossTimer = 90;
+    this.eventWaveTimer = 120;
+    this.activeEvent = null;
+
     this.player = new Player(this.input);
+
+    // Apply meta progression bonuses
+    this.meta.applyToPlayer(this.player);
+
+    // Apply character passive bonus
+    const charDef = getCharacterById(this.selectedCharacterId);
+    if (charDef) {
+      const { stat, value, mode } = charDef.passiveBonus;
+      if (stat === 'maxHp') {
+        if (mode === 'multiply') { this.player.maxHp = Math.floor(this.player.maxHp * value); this.player.hp = this.player.maxHp; }
+        else { this.player.maxHp += value; this.player.hp = this.player.maxHp; }
+      } else if (stat === 'speed') {
+        if (mode === 'multiply') this.player.speed = Math.floor(this.player.speed * value);
+        else this.player.speed += value;
+      } else if (stat === 'magnetRange') {
+        if (mode === 'multiply') this.player.magnetRange = Math.floor(this.player.magnetRange * value);
+        else this.player.magnetRange += value;
+      }
+      // Apply character color
+      // (Player visual color is set via tint on the container children)
+      this.player.container.children.forEach(child => {
+        if (child instanceof Graphics) {
+          (child as Graphics).tint = charDef.color;
+        }
+      });
+    }
+
     this.world.addChild(this.trail.container);
     this.world.addChild(this.player.container);
 
-    const startWeapon = new OrbitWeapon();
-    if (this.isMultiplayer) startWeapon.useServerPull = true;
+    // Create starting weapon based on character
+    const startWeaponId = charDef?.startWeapon || 'orbit';
+    const startWeapon = this.createWeaponByTypeId(startWeaponId);
+    if (this.isMultiplayer && startWeapon instanceof OrbitWeapon) startWeapon.useServerPull = true;
     this.weapons.push(startWeapon);
     this.world.addChild(startWeapon.container);
+
+    // Start BGM
+    this.sound.playBGM();
 
     for (const rp of this.remotePlayers.values()) {
       this.world.addChild(rp.container);
@@ -857,7 +1036,8 @@ export class Game {
         if (enemy.canDamagePlayer()) {
           const dist = enemy.distanceTo(this.player.x, this.player.y);
           if (dist < enemy.radius + this.player.radius) {
-            this.player.takeDamage(enemy.damage);
+            const reducedDmg = Math.max(1, Math.floor(enemy.damage * (1 - this.meta.getDamageReduction())));
+            this.player.takeDamage(reducedDmg);
             enemy.resetDamageCooldown();
             this.ui.updateHp(this.player.hp, this.player.maxHp);
             this.ui.flashDamage();
@@ -949,7 +1129,10 @@ export class Game {
           const count = e.isBoss ? 20 : 8;
           this.particles.burst(e.x, e.y, color, count, e.isBoss ? 300 : 200);
           this.sound.playKill();
-          if (e.isBoss) this.screenShake.trigger(12);
+          if (e.isBoss) {
+            this.screenShake.trigger(12);
+            this.bossKillsThisGame++;
+          }
 
           if (e.splitOnDeath && !e.isBoss) {
             for (let s = 0; s < 3; s++) {
@@ -1024,6 +1207,11 @@ export class Game {
       this.sound.playWave();
     }
 
+    // Solo mini-boss & event waves
+    if (!this.isMultiplayer && this.gameTime > 60) {
+      this.updateSoloEvents(dt, difficulty);
+    }
+
     this.particles.update(dt);
     this.damageNumbers.update(dt);
     this.ui.updateTime(this.gameTime);
@@ -1071,10 +1259,19 @@ export class Game {
         // Solo: game over
         this.gameActive = false;
         this.saveHighscore();
+        this.sound.stopBGM();
+
+        // Process meta progression
+        const coinsEarned = this.meta.calculateCoins(
+          this.kills, this.gameTime, this.level, this.bossKillsThisGame,
+        );
+        this.processEndOfGame();
+
         this.ui.showGameOver(
           {
             time: this.gameTime, kills: this.kills, level: this.level,
             totalDamage: this.totalDamage, wave: this.wave, pickups: this.pickupsCollected,
+            coinsEarned,
           },
           () => this.startGame(),
         );
@@ -1105,10 +1302,11 @@ export class Game {
           w.container.destroy();
         }
         this.weapons = [];
-        const startWeapon = new OrbitWeapon();
-        startWeapon.useServerPull = true;
-        this.weapons.push(startWeapon);
-        this.world.addChild(startWeapon.container);
+        const charDef = getCharacterById(this.selectedCharacterId);
+        const respawnWeapon = this.createWeaponByTypeId(charDef?.startWeapon || 'orbit');
+        if (respawnWeapon instanceof OrbitWeapon) respawnWeapon.useServerPull = true;
+        this.weapons.push(respawnWeapon);
+        this.world.addChild(respawnWeapon.container);
 
         this.level = 1;
         this.xp = 0;
@@ -1194,9 +1392,11 @@ export class Game {
 
   private addXp(amount: number): void {
     if (!this.player.alive) return;
-    // Late-game XP bonus: +100% per 5 minutes
-    const xpMultiplier = 1 + this.gameTime / 300;
-    this.xp += Math.floor(amount * xpMultiplier);
+    // Late-game XP bonus: +100% per 5 minutes, plus meta XP multiplier
+    const xpMultiplier = (1 + this.gameTime / 300) * this.meta.getXpMultiplier();
+    // Gold rush event: 2x XP
+    const eventMultiplier = this.activeEvent?.type === 'gold_rush' ? 2 : 1;
+    this.xp += Math.floor(amount * xpMultiplier * eventMultiplier);
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
@@ -1263,6 +1463,11 @@ export class Game {
         this.world.addChild(newWeapon.container);
       } else {
         choice.apply();
+        // Track evolutions
+        if (choice.icon === '★') {
+          this.evolutionsThisGame++;
+          this.sound.playEvolve();
+        }
       }
       this.ui.updateHp(this.player.hp, this.player.maxHp);
       this.ui.updateWeaponHud(this.weapons);
@@ -1437,6 +1642,193 @@ export class Game {
       if (relX < -1500 || relX > 1500) dot.x = this.camera.x + (Math.random() - 0.5) * 3000;
       this.ambientGraphics.circle(dot.x, dot.y, 1.5);
       this.ambientGraphics.fill({ color: 0xffffff, alpha: dot.alpha });
+    }
+  }
+
+  // ═════════════════════════════════════
+  // ─── NEW FEATURE METHODS ────────────
+  // ═════════════════════════════════════
+
+  private createWeaponByTypeId(typeId: string): WeaponBase {
+    switch (typeId) {
+      case 'orbit': return new OrbitWeapon();
+      case 'bullet': return new BulletWeapon();
+      case 'lightning': return new ChainLightning();
+      case 'forcefield': return new ForceField();
+      case 'boomerang': return new BoomerangWeapon();
+      case 'missile': return new HomingMissileWeapon();
+      default: return new OrbitWeapon();
+    }
+  }
+
+  /** Called at end of game to process meta coins & achievements */
+  private processEndOfGame(): void {
+    // Calculate coins
+    const coinsEarned = this.meta.calculateCoins(
+      this.kills, this.gameTime, this.level, this.bossKillsThisGame,
+    );
+    this.meta.addCoins(coinsEarned);
+    this.meta.recordGame(this.kills, this.bossKillsThisGame);
+
+    // Check achievements
+    const runStats: GameRunStats = {
+      kills: this.kills,
+      bossKills: this.bossKillsThisGame,
+      survivalSeconds: this.gameTime,
+      level: this.level,
+      evolutions: this.evolutionsThisGame,
+    };
+
+    const unlockedSet = new Set<string>();
+    for (const ach of this.achievementChecker.checkAfterGame(
+      runStats, this.meta.totalKills, this.meta.totalBossKills, unlockedSet,
+    )) {
+      if (!this.meta.isAchievementUnlocked(ach.id)) {
+        this.meta.unlockAchievement(ach.id);
+        this.meta.addCoins(ach.reward);
+        this.ui.showAchievementToast(t(ach.nameKey), ach.icon, ach.reward);
+        this.sound.playAchievement();
+      }
+    }
+
+    // Check daily challenges
+    const today = getTodayDateStr();
+    this.meta.setDailyDate(today);
+    const dailies = getDailyChallenges();
+    const completedSet = new Set(this.meta.getDailyCompleted());
+    for (const daily of this.achievementChecker.checkDailies(runStats, dailies, completedSet)) {
+      this.meta.completeDailyChallenge(daily.id);
+      this.meta.addCoins(daily.reward);
+    }
+
+    this.ui.updateTitleCoins(this.meta.coins);
+
+    // coinsEarned already used above
+  }
+
+  /** Solo: mini-boss & event wave system */
+  private updateSoloEvents(dt: number, difficulty: number): void {
+    // Mini-boss spawning
+    this.miniBossTimer -= dt;
+    if (this.miniBossTimer <= 0) {
+      this.miniBossTimer = 90;
+      this.spawnMiniBoss(difficulty);
+    }
+
+    // Event waves
+    this.eventWaveTimer -= dt;
+    if (this.eventWaveTimer <= 0) {
+      this.eventWaveTimer = 120;
+      this.triggerEventWave();
+    }
+
+    // Active event timer
+    if (this.activeEvent) {
+      this.activeEvent.timer -= dt;
+      if (this.activeEvent.timer <= 0) {
+        this.ui.hideEventBanner();
+        // End event effects
+        if (this.activeEvent.type === 'healing_rain') {
+          // Stop healing - handled in update loop
+        }
+        this.activeEvent = null;
+      } else if (this.activeEvent.type === 'healing_rain') {
+        // Heal player
+        if (this.player.alive && this.player.hp < this.player.maxHp) {
+          this.player.heal(Math.ceil(3 * dt));
+          this.ui.updateHp(this.player.hp, this.player.maxHp);
+        }
+      }
+    }
+  }
+
+  private spawnMiniBoss(difficulty: number): void {
+    const types = ['charger_elite', 'splitter_king', 'shield_bearer'];
+    const type = types[Math.floor(Math.random() * types.length)];
+
+    // Use strongest base enemy as template
+    const baseDef = ENEMY_DEFS.pentagon || ENEMY_DEFS.diamond;
+    const angle = randomAngle();
+    const dist = 400 + Math.random() * 200;
+    const x = this.player.x + Math.cos(angle) * dist;
+    const y = this.player.y + Math.sin(angle) * dist;
+
+    const miniBoss = new Enemy(x, y, baseDef, difficulty);
+
+    // Scale up for mini-boss
+    switch (type) {
+      case 'charger_elite':
+        miniBoss.maxHp *= 6; miniBoss.hp = miniBoss.maxHp;
+        miniBoss.speed *= 2.5;
+        miniBoss.xpValue *= 5;
+        break;
+      case 'splitter_king':
+        miniBoss.maxHp *= 8; miniBoss.hp = miniBoss.maxHp;
+        miniBoss.xpValue *= 6;
+        miniBoss.splitOnDeath = true;
+        break;
+      case 'shield_bearer':
+        miniBoss.maxHp *= 10; miniBoss.hp = miniBoss.maxHp;
+        miniBoss.speed *= 0.8;
+        miniBoss.xpValue *= 8;
+        break;
+    }
+
+    // Visual: bigger + distinct color
+    miniBoss.container.scale.set(2.0);
+    miniBoss.radius *= 1.5;
+
+    this.enemies.push(miniBoss);
+    this.world.addChild(miniBoss.container);
+
+    this.ui.showEventBanner(t('event.miniboss'), 'event-red', 3);
+    this.sound.playMiniBoss();
+    this.screenShake.trigger(8);
+  }
+
+  private triggerEventWave(): void {
+    const events = ['gold_rush', 'elite_invasion', 'boss_rush', 'healing_rain'];
+    const event = events[Math.floor(Math.random() * events.length)];
+
+    this.sound.playEventWave();
+
+    switch (event) {
+      case 'gold_rush':
+        this.activeEvent = { type: 'gold_rush', timer: 15 };
+        this.ui.showEventBanner(t('event.gold_rush'), 'event-gold', 15);
+        break;
+      case 'elite_invasion':
+        this.activeEvent = { type: 'elite_invasion', timer: 20 };
+        this.ui.showEventBanner(t('event.elite_invasion'), 'event-red', 20);
+        // Spawn extra elite enemies
+        for (let i = 0; i < 8; i++) {
+          const angle = randomAngle();
+          const dist = 300 + Math.random() * 300;
+          const def = ENEMY_DEFS.pentagon || ENEMY_DEFS.diamond;
+          const difficulty = 1 + this.gameTime / 60 * 0.4;
+          const e = new Enemy(
+            this.player.x + Math.cos(angle) * dist,
+            this.player.y + Math.sin(angle) * dist,
+            def, difficulty * 1.5,
+          );
+          e.maxHp *= 2; e.hp = e.maxHp;
+          e.xpValue *= 2;
+          this.enemies.push(e);
+          this.world.addChild(e.container);
+        }
+        break;
+      case 'boss_rush': {
+        this.ui.showEventBanner(t('event.boss_rush'), 'event-red', 5);
+        const difficulty = 1 + this.gameTime / 60 * 0.4;
+        for (let i = 0; i < 2; i++) {
+          this.spawnMiniBoss(difficulty);
+        }
+        break;
+      }
+      case 'healing_rain':
+        this.activeEvent = { type: 'healing_rain', timer: 12 };
+        this.ui.showEventBanner(t('event.healing_rain'), 'event-green', 12);
+        break;
     }
   }
 }

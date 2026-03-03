@@ -85,8 +85,6 @@ export interface C2S_PullRequest {
   radius: number;
 }
 
-export type C2S_Message = C2S_Join | C2S_State | C2S_EnemyHit | C2S_PvpHit | C2S_Chat | C2S_Ping | C2S_PullRequest;
-
 // ─── Server → Client ────────────────────────
 export interface PlayerData {
   id: string;
@@ -218,10 +216,44 @@ export interface S2C_WaveEvent {
   enemyCount: number;
 }
 
+// ─── Event wave (mini-boss + special events) ───
+export interface S2C_EventWave {
+  type: 'event_wave_start';
+  event: 'gold_rush' | 'elite_invasion' | 'boss_rush' | 'healing_rain';
+  duration: number;
+}
+
+export interface S2C_EventWaveEnd {
+  type: 'event_wave_end';
+  event: string;
+}
+
+export interface S2C_MiniBossSpawn {
+  type: 'mini_boss_spawn';
+  enemy: ServerEnemy;
+  bossType: string;
+}
+
+// ─── Party system ───
+export interface C2S_CreateParty { type: 'create_party'; }
+export interface C2S_JoinParty { type: 'join_party'; code: string; }
+export interface C2S_PartyStart { type: 'party_start'; }
+
+export interface S2C_PartyCreated { type: 'party_created'; code: string; }
+export interface S2C_PartyJoined { type: 'party_joined'; code: string; members: string[]; }
+export interface S2C_PartyMemberJoin { type: 'party_member_join'; name: string; }
+export interface S2C_PartyMemberLeave { type: 'party_member_leave'; name: string; }
+export interface S2C_PartyError { type: 'party_error'; reason: string; }
+
+export type C2S_Message = C2S_Join | C2S_State | C2S_EnemyHit | C2S_PvpHit | C2S_Chat | C2S_Ping | C2S_PullRequest
+  | C2S_CreateParty | C2S_JoinParty | C2S_PartyStart;
+
 export type S2C_Message =
   | S2C_Welcome | S2C_PlayerJoin | S2C_PlayerLeave | S2C_PlayersSync
   | S2C_EnemiesSync | S2C_EnemySpawn | S2C_EnemyDeath
   | S2C_BossSpawn | S2C_BossUpdate | S2C_BossDead
   | S2C_PvpDamage
   | S2C_TeamScores | S2C_Leaderboard | S2C_Chat
-  | S2C_PingSignal | S2C_WaveEvent;
+  | S2C_PingSignal | S2C_WaveEvent
+  | S2C_EventWave | S2C_EventWaveEnd | S2C_MiniBossSpawn
+  | S2C_PartyCreated | S2C_PartyJoined | S2C_PartyMemberJoin | S2C_PartyMemberLeave | S2C_PartyError;

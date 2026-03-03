@@ -4,6 +4,8 @@ import { BulletWeapon } from '../weapons/BulletWeapon';
 import { AreaWeapon } from '../weapons/AreaWeapon';
 import { ChainLightning } from '../weapons/ChainLightning';
 import { ForceField } from '../weapons/ForceField';
+import { BoomerangWeapon } from '../weapons/BoomerangWeapon';
+import { HomingMissileWeapon } from '../weapons/HomingMissileWeapon';
 import { Player } from '../entities/Player';
 import { t } from './i18n';
 
@@ -18,7 +20,7 @@ export interface UpgradeChoice {
 }
 
 export class LevelUpSystem {
-  private weaponClasses = [OrbitWeapon, BulletWeapon, AreaWeapon, ChainLightning, ForceField];
+  private weaponClasses = [OrbitWeapon, BulletWeapon, AreaWeapon, ChainLightning, ForceField, BoomerangWeapon, HomingMissileWeapon];
 
   generateChoices(player: Player, weapons: WeaponBase[], count = 3): UpgradeChoice[] {
     const pool: UpgradeChoice[] = [];
@@ -138,6 +140,8 @@ export class LevelUpSystem {
     if (id === 'new_area') return new AreaWeapon();
     if (id === 'new_lightning') return new ChainLightning();
     if (id === 'new_forcefield') return new ForceField();
+    if (id === 'new_boomerang') return new BoomerangWeapon();
+    if (id === 'new_missile') return new HomingMissileWeapon();
     return null;
   }
 }
