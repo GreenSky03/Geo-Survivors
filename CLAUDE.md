@@ -122,7 +122,7 @@ index.html               # HTML + CSS (UI 오버레이)
 | BulletWeapon | 투사체/빔 | 관통빔 |
 | AreaWeapon | 범위 펄스 | 영구 오라 |
 | ChainLightning | 체인 번개 | 더 많은 타겟 |
-| ForceField | 포스 필드 | 확장 범위 (knockback 솔로 전용) |
+| ForceField | 둔화 필드 (50%, evolved 70%) | Event Horizon (180 범위) |
 
 ## Protocol Summary (shared/protocol.ts)
 
@@ -146,3 +146,10 @@ index.html               # HTML + CSS (UI 오버레이)
 ## Team System
 4팀: blue(`0x4488ff`), red(`0xff4466`), green(`0x44ff88`), yellow(`0xffcc44`)
 - 같은 팀 PvP 불가, 보스 기여도 팀별 추적
+
+## Known Bugs (TODO)
+
+1. **능력치 업그레이드 사망 시 미초기화**: 무기는 사망 시 초기화되지만, 능력치(스탯) 업그레이드는 레벨이 유지됨. 사망 페널티와 일관되게 초기화 필요.
+2. **ForceField 설명 수정 필요**: 인게임 무기 설명이 이전 knockback 기반 텍스트. 현재 둔화(slow) 메커니즘에 맞게 업데이트 필요 (i18n 키: `weapon.forcefield.desc`, `weapon.forcefield.evolve_desc`).
+3. **사망 시 적/플레이어 잔상**: 게임 중 사망 시 해당 시점의 플레이어와 적이 정지 상태로 맵에 남는 현상이 간헐적 발생. 남은 적은 공격해도 사라지지 않고 피해도 입히지 않음. 클라이언트 사망 처리 흐름에서 적/플레이어 엔티티 cleanup 누락 추정.
+4. **난이도 스케일링 방식 개선 필요**: 현재 난이도는 방 생성 이후 경과 시간 기반 (`1+min*0.4+(min/10)^1.5`). 플레이어 사망 후 부활하면 난이도가 이미 급상승해 있어 생존 불가. 방의 현재 플레이어 수 + 평균 레벨 기반 실시간 동적 난이도 조절로 변경 권장.
