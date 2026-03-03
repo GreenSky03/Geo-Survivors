@@ -242,10 +242,15 @@ export class UI {
       }
       card.innerHTML = html;
 
-      card.addEventListener('click', () => {
+      const selectCard = () => {
         const cb = this.onChoiceCallback;
         this.hideLevelUp();
         if (cb) cb(choice);
+      };
+      card.addEventListener('click', selectCard);
+      card.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        selectCard();
       });
       this.levelUpChoices.appendChild(card);
     }

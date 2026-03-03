@@ -1229,10 +1229,7 @@ export class Game {
   }
 
   private showLevelUp(): void {
-    // In multiplayer, don't pause the game
-    if (!this.isMultiplayer) {
-      this.paused = true;
-    }
+    // Game continues running during level-up (both solo and multiplayer)
     this.levelUpShown = true;
     const choices = this.levelUpSystem.generateChoices(this.player, this.weapons);
 
@@ -1250,10 +1247,6 @@ export class Game {
       this.ui.updateHp(this.player.hp, this.player.maxHp);
       this.ui.updateWeaponHud(this.weapons);
       this.levelUpShown = false;
-
-      if (!this.isMultiplayer) {
-        this.paused = false;
-      }
 
       // Process queued level-ups
       if (this.levelUpPending > 0) {

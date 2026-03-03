@@ -33,7 +33,7 @@ export class Input {
       width: '120px', height: '120px', borderRadius: '50%',
       border: '2px solid rgba(255,255,255,0.2)',
       background: 'rgba(255,255,255,0.05)',
-      display: 'none', zIndex: '200',
+      display: 'none', zIndex: '15',
       touchAction: 'none',
     });
 
@@ -50,18 +50,23 @@ export class Input {
     this.joystickEl.appendChild(this.joystickKnob);
     document.body.appendChild(this.joystickEl);
 
-    // Touch zone covers left half of screen
+    // Touch zone covers entire screen (below UI elements)
     const touchZone = document.createElement('div');
     touchZone.id = 'touch-zone';
     Object.assign(touchZone.style, {
       position: 'fixed', top: '0', left: '0',
-      width: '50%', height: '100%',
-      zIndex: '199', touchAction: 'none',
+      width: '100%', height: '100%',
+      zIndex: '10', touchAction: 'none',
       display: 'none',
     });
     document.body.appendChild(touchZone);
 
     touchZone.addEventListener('touchstart', (e) => {
+      // Ignore touches on UI elements (level-up cards, buttons, etc.)
+      const target = e.target as HTMLElement;
+      if (target.closest('#level-up-screen, #pause-screen, #game-over-screen, #title-screen, #chat-input-row, #chat-toggle-btn, #ping-btn, #respawn-overlay')) {
+        return;
+      }
       e.preventDefault();
       const t = e.touches[0];
       this.touchActive = true;

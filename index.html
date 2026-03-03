@@ -40,38 +40,40 @@
     @keyframes pulse { from { opacity: 0.6; } to { opacity: 1; } }
 
     #level-up-screen {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(5, 5, 20, 0.85); display: none;
-      flex-direction: column; align-items: center; justify-content: center;
-      pointer-events: auto;
+      position: absolute; top: 0; left: 0; width: 100%; height: auto;
+      background: linear-gradient(180deg, rgba(5, 5, 20, 0.92) 0%, rgba(5, 5, 20, 0.8) 80%, transparent 100%);
+      display: none;
+      flex-direction: column; align-items: center; justify-content: flex-start;
+      padding-top: 20px; padding-bottom: 30px;
+      pointer-events: auto; z-index: 300;
     }
     #level-up-screen h2 {
-      font-size: 28px; color: #44ffaa; margin-bottom: 24px;
+      font-size: 24px; color: #44ffaa; margin-bottom: 16px;
       text-shadow: 0 0 20px #44ffaa;
     }
     #level-up-choices {
-      display: flex; gap: 16px;
+      display: flex; gap: 12px;
     }
     .level-up-card {
-      width: 200px; padding: 20px; background: rgba(255,255,255,0.05);
+      width: 180px; padding: 14px; background: rgba(255,255,255,0.08);
       border: 1px solid rgba(255,255,255,0.15); border-radius: 12px;
       cursor: pointer; text-align: center; transition: all 0.15s;
     }
-    .level-up-card:hover {
-      background: rgba(68, 255, 170, 0.1); border-color: #44ffaa;
-      transform: translateY(-4px);
+    .level-up-card:hover, .level-up-card:active {
+      background: rgba(68, 255, 170, 0.15); border-color: #44ffaa;
+      transform: translateY(-2px);
     }
-    .level-up-card .card-icon { font-size: 32px; margin-bottom: 8px; }
-    .level-up-card .card-name { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
-    .level-up-card .card-desc { font-size: 12px; opacity: 0.7; }
+    .level-up-card .card-icon { font-size: 28px; margin-bottom: 6px; }
+    .level-up-card .card-name { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+    .level-up-card .card-desc { font-size: 11px; opacity: 0.7; }
     .level-up-card .card-stat {
-      font-size: 12px; margin-top: 8px; padding: 4px 8px;
+      font-size: 11px; margin-top: 6px; padding: 3px 6px;
       background: rgba(68,255,170,0.08); border-radius: 4px;
       color: #44ffaa; font-weight: bold;
     }
     .level-up-card.evolve-card { border-color: rgba(255,200,50,0.4); }
-    .level-up-card.evolve-card:hover {
-      border-color: #ffcc33; background: rgba(255,200,50,0.08);
+    .level-up-card.evolve-card:hover, .level-up-card.evolve-card:active {
+      border-color: #ffcc33; background: rgba(255,200,50,0.12);
     }
     .level-up-card.evolve-card .card-stat { color: #ffcc33; background: rgba(255,200,50,0.1); }
 
@@ -334,9 +336,12 @@
     @media (max-width: 768px) {
       #title-screen h1 { font-size: 40px; letter-spacing: 4px; }
       #title-screen .subtitle { font-size: 13px; margin-bottom: 32px; }
-      .level-up-card { width: 160px; padding: 14px; }
-      .level-up-card .card-icon { font-size: 26px; }
-      .level-up-card .card-name { font-size: 14px; }
+      .level-up-card { width: 150px; padding: 12px; }
+      .level-up-card .card-icon { font-size: 22px; margin-bottom: 4px; }
+      .level-up-card .card-name { font-size: 13px; }
+      .level-up-card .card-desc { font-size: 10px; }
+      #level-up-screen h2 { font-size: 20px; margin-bottom: 12px; }
+      #level-up-screen { padding-top: 14px; padding-bottom: 20px; }
       #boss-hp-bar { width: 300px; }
       #minimap { width: 110px; height: 110px; }
       #game-over-screen h2 { font-size: 28px; }
@@ -351,10 +356,14 @@
       #name-input { width: 180px; font-size: 14px; padding: 8px 14px; }
       .mode-btn { padding: 8px 16px; font-size: 12px; }
 
-      /* Level-up: vertical stack */
-      #level-up-choices { flex-direction: column; align-items: center; }
-      .level-up-card { width: 260px; padding: 12px; }
-      #level-up-screen h2 { font-size: 22px; margin-bottom: 14px; }
+      /* Level-up: vertical stack, compact */
+      #level-up-screen { padding-top: 10px; padding-bottom: 16px; }
+      #level-up-screen h2 { font-size: 18px; margin-bottom: 8px; }
+      #level-up-choices { flex-direction: column; align-items: center; gap: 8px; }
+      .level-up-card { width: 260px; padding: 10px; }
+      .level-up-card .card-icon { font-size: 20px; margin-bottom: 2px; }
+      .level-up-card .card-name { font-size: 13px; margin-bottom: 2px; }
+      .level-up-card .card-desc { font-size: 10px; }
 
       /* HUD */
       #hud .bar-container { width: 180px; height: 12px; }
