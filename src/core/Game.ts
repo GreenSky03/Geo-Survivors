@@ -373,8 +373,10 @@ export class Game {
 
     this.net.on('enemies_sync', (data) => {
       // Compact format: [id, x, y, hp, flags, vx, vy, ...]
+      const serverIds = new Set<number>();
       for (let i = 0; i < data.length; i += 7) {
         const id = data[i];
+        serverIds.add(id);
         const sx = data[i + 1];
         const sy = data[i + 2];
         const hp = data[i + 3];
@@ -405,6 +407,18 @@ export class Game {
           } else {
             enemy.speed = enemy.baseSpeed;
           }
+        }
+      }
+
+      // Remove stale enemies not present in server sync (missed enemy_death)
+      const now = Date.now();
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (e.serverId >= 0 && !serverIds.has(e.serverId) && now - e.lastSyncTime > 2000) {
+          this.world.removeChild(e.container);
+          e.container.destroy();
+          this.enemyById.delete(e.serverId);
+          this.enemies.splice(i, 1);
         }
       }
     });
@@ -1065,7 +1079,7 @@ export class Game {
         this.player.container.visible = true;
         this.player.container.alpha = 1;
 
-        // Death penalty: full reset (weapons, level, XP)
+        // Death penalty: full reset (weapons, level, XP, stats)
         for (const w of this.weapons) {
           this.world.removeChild(w.container);
           w.container.destroy();
@@ -1083,6 +1097,25 @@ export class Game {
         this.ui.updateXp(0, 10);
         this.ui.updateWeaponHud(this.weapons);
         this.lastWeaponSync = '';
+
+        // Reset player stats to defaults
+        this.player.maxHp = 100;
+        this.player.speed = 280;
+        this.player.magnetRange = 100;
+        this.player.hpRegen = 0;
+        this.player.hp = this.player.maxHp;
+
+        // Clean up XP orbs and pickups accumulated during death
+        for (const orb of this.xpOrbs) {
+          this.world.removeChild(orb.container);
+          orb.container.destroy();
+        }
+        this.xpOrbs = [];
+        for (const p of this.pickups) {
+          this.world.removeChild(p.container);
+          p.container.destroy();
+        }
+        this.pickups = [];
 
         this.ui.updateHp(this.player.hp, this.player.maxHp);
         this.ui.hideRespawnOverlay();

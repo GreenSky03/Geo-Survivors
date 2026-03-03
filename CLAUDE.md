@@ -82,8 +82,9 @@ index.html               # HTML + CSS (UI 오버레이)
 - **적 스폰**: centroid 60% + 랜덤 플레이어 40%, 가중치 타겟팅
 - **원격 무기 동기화**: `WeaponSyncData[]` 변경 시 전송, RemotePlayer에서 렌더링
 - **Charger**: 서버 flags 동기화, OrbitWeapon pull: `pull_request` → 서버 위치 조정
+- **동적 난이도**: 서버 `getRoomDifficulty()` = `1 + mins*0.2 + (mins/15)^1.3 + avgLevel*0.25` (솔로는 기존 시간 기반 유지)
 - **웨이브 이벤트**: 60초마다, 엘리트 8%, 팀 버프 300px/8%, 핑(G키)
-- **핑/킬로그 UI**, 적 스케일링, 난이도 곡선 `1+min*0.4+(min/10)^1.5`
+- **핑/킬로그 UI**, 적 스케일링
 - **사망 페널티**: 레벨1/XP0/무기초기화, 5초 대기 → 안전 위치 부활 (3초 무적)
 - **사망 슬로모션**, 원격 사망 알림 (파티클+킬로그), 파티클 오브젝트 풀링
 - **멀티 데미지 보고**: ChainLightning/beam `pendingHits[]` → `getHits()` 반환
@@ -149,7 +150,11 @@ index.html               # HTML + CSS (UI 오버레이)
 
 ## Known Bugs (TODO)
 
-1. **능력치 업그레이드 사망 시 미초기화**: 무기는 사망 시 초기화되지만, 능력치(스탯) 업그레이드는 레벨이 유지됨. 사망 페널티와 일관되게 초기화 필요.
-2. **ForceField 설명 수정 필요**: 인게임 무기 설명이 이전 knockback 기반 텍스트. 현재 둔화(slow) 메커니즘에 맞게 업데이트 필요 (i18n 키: `weapon.forcefield.desc`, `weapon.forcefield.evolve_desc`).
-3. **사망 시 적/플레이어 잔상**: 게임 중 사망 시 해당 시점의 플레이어와 적이 정지 상태로 맵에 남는 현상이 간헐적 발생. 남은 적은 공격해도 사라지지 않고 피해도 입히지 않음. 클라이언트 사망 처리 흐름에서 적/플레이어 엔티티 cleanup 누락 추정.
-4. **난이도 스케일링 방식 개선 필요**: 현재 난이도는 방 생성 이후 경과 시간 기반 (`1+min*0.4+(min/10)^1.5`). 플레이어 사망 후 부활하면 난이도가 이미 급상승해 있어 생존 불가. 방의 현재 플레이어 수 + 평균 레벨 기반 실시간 동적 난이도 조절로 변경 권장.
+_(없음 — 아래 항목 모두 해결됨)_
+
+## Recently Fixed
+
+- **능력치 업그레이드 사망 시 초기화**: 리스폰 시 maxHp/speed/magnetRange/hpRegen 기본값으로 리셋
+- **ForceField 설명**: i18n `weapon.forcefield.desc` knockback→slow 텍스트로 수정
+- **사망 시 잔상(Ghost Entities)**: `enemies_sync`에서 서버에 없는 stale 적 자동 제거 (2초 미응답 시), 리스폰 시 XP 오브/픽업 cleanup
+- **난이도 스케일링**: 순수 시간 기반 → `getRoomDifficulty()` (시간 축소 + 평균 레벨 기반). 공식: `1 + mins*0.2 + (mins/15)^1.3 + avgLevel*0.25`

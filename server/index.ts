@@ -136,6 +136,22 @@ function clampToMap(x: number, y: number): { x: number; y: number } {
   };
 }
 
+// ─── Dynamic difficulty: time + average player level ───
+function getRoomDifficulty(room: Room): number {
+  const mins = room.serverTime / 60;
+  // Reduced time component (was: mins*0.4 + (mins/10)^1.5)
+  const timeComponent = 1 + mins * 0.2 + Math.pow(mins / 15, 1.3);
+  // Player level component: avg level across all players
+  let avgLevel = 1;
+  if (room.players.size > 0) {
+    let totalLevel = 0;
+    for (const p of room.players.values()) totalLevel += p.data.level;
+    avgLevel = totalLevel / room.players.size;
+  }
+  const levelComponent = avgLevel * 0.25;
+  return timeComponent + levelComponent;
+}
+
 function findOrCreateRoom(preferCode?: string): Room {
   if (preferCode) {
     const room = rooms.get(preferCode);
@@ -221,8 +237,7 @@ function createRoomEnemy(
   room: Room, typeKey: string, x: number, y: number,
   opts: { isElite?: boolean; isBoss?: boolean; hpOverride?: number; speedOverride?: number; xpOverride?: number } = {},
 ): RoomEnemy {
-  const mins = room.serverTime / 60;
-  const difficulty = 1 + mins * 0.4 + Math.pow(mins / 10, 1.5);
+  const difficulty = getRoomDifficulty(room);
   const def = ENEMY_DEFS[typeKey] || ENEMY_DEFS.triangle;
   const eliteMult = opts.isElite ? 3 : 1;
   const hp = opts.hpOverride ?? Math.floor(def.hp * difficulty * (1 + room.players.size * 0.15) * eliteMult);
@@ -507,8 +522,8 @@ function updateEnemies(room: Room): void {
       if (pdist < enemyRadius + 10) {
         enemy.damageCooldowns.set(p.data.id, 0.8);
         const baseDmg = def ? def.damage : 10;
-        const colMins = room.serverTime / 60;
-        const dmg = Math.floor(baseDmg * (1 + colMins * 0.3 + Math.pow(colMins / 10, 1.2)) * (enemy.isElite ? 1.5 : 1));
+        const colDifficulty = getRoomDifficulty(room);
+        const dmg = Math.floor(baseDmg * colDifficulty * (enemy.isElite ? 1.5 : 1));
         const pvpMsg: S2C_PvpDamage = {
           type: 'pvp_damage',
           fromId: `enemy_${enemy.id}`,
@@ -761,7 +776,7 @@ wss.on('connection', (ws: WebSocket) => {
               const mx = enemy.x + Math.cos(a) * 20;
               const my = enemy.y + Math.sin(a) * 20;
               const mini = createRoomEnemy(playerRoom, 'triangle', mx, my, {
-                hpOverride: Math.floor(15 * (1 + (playerRoom.serverTime / 60) * 0.5)),
+                hpOverride: Math.floor(15 * getRoomDifficulty(playerRoom)),
                 speedOverride: 100,
                 xpOverride: 1,
               });
@@ -866,8 +881,7 @@ setInterval(() => {
     room.serverTime += TICK_S;
 
     // Spawn enemies
-    const srvMins = room.serverTime / 60;
-    const difficulty = 1 + srvMins * 0.4 + Math.pow(srvMins / 10, 1.5);
+    const difficulty = getRoomDifficulty(room);
     const spawnInterval = Math.max(0.3, 1.2 / difficulty);
     room.spawnTimer -= TICK_S;
     if (room.spawnTimer <= 0 && room.enemies.size < MAX_ENEMIES) {

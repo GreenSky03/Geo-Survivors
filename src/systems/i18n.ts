@@ -46,7 +46,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'weapon.lightning.evolve_desc': { en: 'Triple lightning bolts with rapid fire', ko: '3중 번개가 빠르게 연사' },
 
   'weapon.forcefield.name': { en: 'Force Field', ko: '포스 필드' },
-  'weapon.forcefield.desc': { en: 'Pushes enemies away and damages them', ko: '적을 밀어내며 데미지' },
+  'weapon.forcefield.desc': { en: 'Slows nearby enemies and damages them', ko: '주변 적을 감속시키며 데미지' },
   'weapon.forcefield.evolve_name': { en: 'Event Horizon', ko: '이벤트 호라이즌' },
   'weapon.forcefield.evolve_desc': { en: 'Massive field that slows and crushes enemies', ko: '적을 감속시키고 압사하는 거대 필드' },
 
