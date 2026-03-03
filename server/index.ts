@@ -18,7 +18,7 @@ const BOSS_INTERVAL_S = 120;
 const TICK_MS = 50;
 const TICK_S = TICK_MS / 1000;
 const PLAYER_SYNC_MS = 100;
-const ENEMY_SYNC_MS = 200;
+const ENEMY_SYNC_MS = 100;
 const SCOREBOARD_MS = 2000;
 const MAX_ENEMIES = 120;
 

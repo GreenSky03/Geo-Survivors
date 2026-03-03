@@ -204,20 +204,24 @@ export class Enemy {
     this.flashTimer = 0.08;
   }
 
-  /** Smooth position-only interpolation toward server snapshot (no dead reckoning) */
+  /** Interpolate toward predicted server position (server snapshot + velocity extrapolation) */
   lerpToServer(dt: number): void {
-    const dx = this.serverX - this.x;
-    const dy = this.serverY - this.y;
+    // Extrapolate target: predict where the enemy is NOW based on last sync + velocity
+    const elapsed = Math.min((Date.now() - this.lastSyncTime) / 1000, 0.15); // cap at 150ms
+    const targetX = this.serverX + this.serverVx * elapsed;
+    const targetY = this.serverY + this.serverVy * elapsed;
+
+    const dx = targetX - this.x;
+    const dy = targetY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > 400) {
       // Snap if way too far
-      this.x = this.serverX;
-      this.y = this.serverY;
+      this.x = targetX;
+      this.y = targetY;
     } else if (dist > 1) {
-      // Adaptive lerp: faster when further away, slower when close
-      // At 200ms sync interval, factor ~8-12 gives smooth catch-up
-      const factor = Math.min(dist < 30 ? 8 : 12, dist * 0.1);
+      // Adaptive lerp: faster when further, slower when close
+      const factor = Math.min(dist < 30 ? 10 : 15, dist * 0.15);
       const t = 1 - Math.exp(-factor * dt);
       this.x += dx * t;
       this.y += dy * t;

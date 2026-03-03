@@ -58,7 +58,7 @@ index.html               # HTML + CSS (UI 오버레이)
 - 모든 것이 클라이언트 로컬 (적 스폰/이동/충돌/죽음), 서버 연결 없음
 
 ### 멀티플레이어 모드
-- **서버 권한 적**: 서버가 스폰/이동, 클라이언트는 `lerpToServer(dt)` 보간만 (dead reckoning 없음)
+- **서버 권한 적**: 서버가 스폰/이동, 클라이언트는 `lerpToServer(dt)` velocity 외삽 + adaptive lerp
 - **적 데미지**: `serverId >= 0`이면 비주얼 피드백만, 서버가 HP 관리
 - **적 사망**: `enemy_death` 핸들러 → 항상 cleanup (dead 가드 없음)
 - **PvP**: `checkHitPoint()`로 충돌 판정 → 서버 보고 → 상대에게 전달
@@ -68,7 +68,7 @@ index.html               # HTML + CSS (UI 오버레이)
 | 데이터 | 주기 | 형식 |
 |--------|------|------|
 | 플레이어 상태 | 100ms | 전체 PlayerData |
-| 적 위치/HP | 200ms | 압축 `[id,x,y,hp,flags]` |
+| 적 위치/HP | 100ms | 압축 `[id,x,y,hp,flags,vx,vy]` + 클라이언트 velocity 외삽 |
 | 점수판 | 2000ms | 팀 점수 + 리더보드 |
 
 ### 연결 흐름
@@ -98,7 +98,7 @@ index.html               # HTML + CSS (UI 오버레이)
 - **ForceField**: 둔화 필드 (솔로: 50%/evolved 70%, 멀티: 서버 50%) + 데미지 틱(0.4~0.2s)
   - 범위: 80/100/120/180(evolved), 서버 동기화, 슬로우 flags bit2로 클라이언트 전달
   - 슬로우 시각: 적 파란 틴트(0x6688ff), 필드 밝기 적 수에 따라 증가
-  - 적 glow: radius+2 (body와 거의 일치), Player.radius=12
+  - 적 glow: radius+6, Player.radius=10 (삼각형 내접원)
 - **모바일 반응형 UI**: `@media 768px` (태블릿), `@media 480px` (모바일) — 레벨업 세로 스택, HUD/미니맵/채팅 축소
 
 ## Key Constants
