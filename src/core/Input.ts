@@ -4,6 +4,7 @@ export class Input {
 
   // Touch joystick
   private touchActive = false;
+  private touchId: number = -1; // Track specific touch finger
   private touchStartX = 0;
   private touchStartY = 0;
   private touchDx = 0;
@@ -34,7 +35,7 @@ export class Input {
       border: '2px solid rgba(255,255,255,0.2)',
       background: 'rgba(255,255,255,0.05)',
       display: 'none', zIndex: '15',
-      touchAction: 'none',
+      touchAction: 'none', pointerEvents: 'none',
     });
 
     // Knob
@@ -64,12 +65,16 @@ export class Input {
     touchZone.addEventListener('touchstart', (e) => {
       // Ignore touches on UI elements (level-up cards, buttons, etc.)
       const target = e.target as HTMLElement;
-      if (target.closest('#level-up-screen, #pause-screen, #game-over-screen, #title-screen, #chat-input-row, #chat-toggle-btn, #ping-btn, #respawn-overlay')) {
+      if (target.closest('.mobile-action-btn, #level-up-screen, #pause-screen, #game-over-screen, #title-screen, #chat-input-row, #chat-panel, #respawn-overlay')) {
         return;
       }
+      // Only track one joystick finger at a time
+      if (this.touchActive) return;
+
       e.preventDefault();
-      const t = e.touches[0];
+      const t = e.changedTouches[0];
       this.touchActive = true;
+      this.touchId = t.identifier;
       this.touchStartX = t.clientX;
       this.touchStartY = t.clientY;
       this.touchDx = 0;
@@ -83,9 +88,18 @@ export class Input {
     }, { passive: false });
 
     touchZone.addEventListener('touchmove', (e) => {
-      e.preventDefault();
       if (!this.touchActive) return;
-      const t = e.touches[0];
+      // Find our tracked touch by identifier
+      let t: Touch | null = null;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === this.touchId) {
+          t = e.touches[i];
+          break;
+        }
+      }
+      if (!t) return;
+      e.preventDefault();
+
       const dx = t.clientX - this.touchStartX;
       const dy = t.clientY - this.touchStartY;
       const maxDist = 50;
@@ -96,19 +110,26 @@ export class Input {
         this.touchDy = (dy / dist) * (clampedDist / maxDist);
       }
       // Move knob
-      if (this.joystickKnob) {
+      if (this.joystickKnob && dist > 0) {
         const knobX = (dx / dist) * Math.min(dist, maxDist);
         const knobY = (dy / dist) * Math.min(dist, maxDist);
         this.joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
       }
     }, { passive: false });
 
-    const endTouch = () => {
-      this.touchActive = false;
-      this.touchDx = 0;
-      this.touchDy = 0;
-      if (this.joystickEl) this.joystickEl.style.display = 'none';
-      if (this.joystickKnob) this.joystickKnob.style.transform = 'translate(-50%, -50%)';
+    const endTouch = (e: TouchEvent) => {
+      // Only end if our tracked finger was lifted
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === this.touchId) {
+          this.touchActive = false;
+          this.touchId = -1;
+          this.touchDx = 0;
+          this.touchDy = 0;
+          if (this.joystickEl) this.joystickEl.style.display = 'none';
+          if (this.joystickKnob) this.joystickKnob.style.transform = 'translate(-50%, -50%)';
+          break;
+        }
+      }
     };
 
     touchZone.addEventListener('touchend', endTouch);

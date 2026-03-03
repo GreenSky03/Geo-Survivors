@@ -219,13 +219,19 @@ export class Game {
     // Mobile chat toggle button (chat icon to open, ✕ to close)
     const chatToggleBtn = document.getElementById('chat-toggle-btn')!;
     const chatIconSvg = chatToggleBtn.innerHTML;
-    chatToggleBtn.addEventListener('click', () => {
+    const handleChatToggle = () => {
       if (this.ui.isChatInputFocused()) {
         this.ui.closeChatInput();
       } else {
         this.ui.openChatInput();
-        chatToggleBtn.innerHTML = '<span style="font-size:20px;line-height:1">✕</span>';
+        chatToggleBtn.innerHTML = '<span style="font-size:18px;line-height:1">✕</span>';
       }
+    };
+    chatToggleBtn.addEventListener('click', handleChatToggle);
+    chatToggleBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleChatToggle();
     });
 
     // Chat close callback — set flag to prevent Enter re-open + reset toggle icon
@@ -235,19 +241,33 @@ export class Game {
     });
 
     // Mobile chat send button
-    document.getElementById('chat-send-btn')!.addEventListener('click', () => {
+    const chatSendBtn = document.getElementById('chat-send-btn')!;
+    const handleChatSend = () => {
       const msg = this.ui.getChatInputValue();
       if (msg && this.net.connected) this.net.sendChat(msg);
       this.ui.closeChatInput();
+    };
+    chatSendBtn.addEventListener('click', handleChatSend);
+    chatSendBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleChatSend();
     });
 
     // Mobile ping button
-    document.getElementById('ping-btn')!.addEventListener('click', () => {
+    const pingBtn = document.getElementById('ping-btn')!;
+    const handlePing = () => {
       if (this.isMultiplayer && this.gameActive && this.started && this.net.connected) {
         if (this.ui.isChatInputFocused()) return;
         this.net.sendPing(this.player.x, this.player.y);
         this.activePings.push({ x: this.player.x, y: this.player.y, team: this.net.myTeam, name: 'You', timer: 4 });
       }
+    };
+    pingBtn.addEventListener('click', handlePing);
+    pingBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handlePing();
     });
 
     // Auto-pause on blur (solo only)
