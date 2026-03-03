@@ -5,7 +5,9 @@ import { Player } from '../entities/Player';
 import { Enemy, ENEMY_DEFS } from '../entities/Enemy';
 import { XPOrb } from '../entities/XPOrb';
 import { Pickup, rollPickupDrop } from '../entities/Pickup';
-import { spawnBoss } from '../entities/Boss';
+import { spawnBoss, BossController } from '../entities/Boss';
+import { BossProjectile } from '../entities/BossProjectile';
+import { BlackHole } from '../entities/BlackHole';
 import { RemotePlayer } from '../entities/RemotePlayer';
 import { WeaponBase } from '../weapons/WeaponBase';
 import { OrbitWeapon } from '../weapons/OrbitWeapon';
@@ -155,6 +157,16 @@ export class Game {
   private miniBossTimer = 90;
   private eventWaveTimer = 120;
   private activeEvent: { type: string; timer: number } | null = null;
+
+  // Boss attack system (solo)
+  private bossControllers = new Map<Enemy, BossController>();
+  private bossProjectiles: BossProjectile[] = [];
+
+  // Black holes
+  private blackHoles: BlackHole[] = [];
+  private blackHoleById = new Map<number, BlackHole>();
+  private nextBlackHoleTime = 90;
+  private nextBlackHoleId = 1;
 
   async init(): Promise<void> {
     this.app = new Application();
@@ -483,6 +495,7 @@ export class Game {
         const vy = data[i + 6];
         const isElite = (flags & 2) !== 0;
         const isSlowed = (flags & 4) !== 0;
+        const isPhasing = (flags & 8) !== 0;
 
         const enemy = this.enemyById.get(id);
         if (enemy) {
@@ -504,6 +517,11 @@ export class Game {
             enemy.speed = enemy.baseSpeed * 0.5;
           } else {
             enemy.speed = enemy.baseSpeed;
+          }
+
+          // Phaser visual
+          if (enemy.enemyType === 'phaser') {
+            enemy.isPhasingVisual = isPhasing;
           }
         }
       }
@@ -654,6 +672,52 @@ export class Game {
       this.screenShake.trigger(8);
     });
 
+    // ─── Boss Attack (multiplayer) ────────────
+    this.net.on('boss_attack', (data) => {
+      // Create visual projectiles from server event
+      for (const pd of data.projectiles) {
+        const proj = new BossProjectile(data.x, data.y, pd.vx, pd.vy, pd.damage, pd.lifetime);
+        this.bossProjectiles.push(proj);
+        this.world.addChild(proj.container);
+      }
+      // AoE visual
+      if (data.aoe) {
+        this.particles.burst(data.aoe.x, data.aoe.y, 0xff4400, 15, data.aoe.radius);
+        this.screenShake.trigger(8);
+      }
+    });
+
+    // ─── BlackHole (multiplayer) ────────────
+    this.net.on('blackhole_spawn', (data) => {
+      if (this.blackHoleById.has(data.id)) return;
+      const bh = new BlackHole(data.x, data.y);
+      bh.serverId = data.id;
+      this.blackHoles.push(bh);
+      this.blackHoleById.set(data.id, bh);
+      this.world.addChild(bh.container);
+    });
+
+    this.net.on('blackhole_sync', (holes) => {
+      for (const hd of holes) {
+        const bh = this.blackHoleById.get(hd.id);
+        if (bh) {
+          bh.syncFromServer(hd.radius, hd.age);
+        }
+      }
+    });
+
+    this.net.on('blackhole_despawn', (data) => {
+      const bh = this.blackHoleById.get(data.id);
+      if (bh) {
+        bh.dead = true;
+        this.world.removeChild(bh.container);
+        bh.container.destroy();
+        this.blackHoleById.delete(data.id);
+        const idx = this.blackHoles.indexOf(bh);
+        if (idx >= 0) this.blackHoles.splice(idx, 1);
+      }
+    });
+
     // ─── Party Events ─────────────────────────
     this.net.on('party_created', (data) => {
       this.ui.hideConnectionStatus();
@@ -775,6 +839,13 @@ export class Game {
     }
     this.remotePlayers.clear();
     this.enemyById.clear();
+    // Cleanup boss projectiles and black holes
+    for (const proj of this.bossProjectiles) proj.container.destroy();
+    this.bossProjectiles = [];
+    this.bossControllers.clear();
+    for (const bh of this.blackHoles) bh.container.destroy();
+    this.blackHoles = [];
+    this.blackHoleById.clear();
     this.ui.hideAll();
     this.ui.hideParty();
     this.ui.showMultiplayerUI(false);
@@ -831,6 +902,15 @@ export class Game {
     this.lastWeaponSync = '';
     this.weaponSyncTimer = 0;
     this.chargingEnemies.clear();
+    // Boss attack / black hole reset
+    this.bossControllers.clear();
+    for (const proj of this.bossProjectiles) { proj.container.destroy(); }
+    this.bossProjectiles = [];
+    for (const bh of this.blackHoles) { bh.container.destroy(); }
+    this.blackHoles = [];
+    this.blackHoleById.clear();
+    this.nextBlackHoleTime = 90;
+    this.nextBlackHoleId = 1;
     this.pullRequestTimer = 0;
 
     this.particles = new ParticleSystem();
@@ -1013,9 +1093,24 @@ export class Game {
         const boss = spawnBoss(this.player.x, this.player.y, this.bossCount, difficulty);
         this.enemies.push(boss);
         this.world.addChild(boss.container);
+        this.bossControllers.set(boss, new BossController());
         this.bossCount++;
         this.nextBossTime += this.bossInterval;
         this.bossWarningShown = false;
+      }
+
+      // Solo: spawn black holes (90s first, then 60-90s interval)
+      if (this.gameTime >= this.nextBlackHoleTime && this.blackHoles.length < 2) {
+        const bhAngle = randomAngle();
+        const bhDist = 300 + Math.random() * 300;
+        const bh = new BlackHole(
+          this.player.x + Math.cos(bhAngle) * bhDist,
+          this.player.y + Math.sin(bhAngle) * bhDist,
+        );
+        bh.serverId = this.nextBlackHoleId++;
+        this.blackHoles.push(bh);
+        this.world.addChild(bh.container);
+        this.nextBlackHoleTime = this.gameTime + 60 + Math.random() * 30;
       }
     }
 
@@ -1027,6 +1122,114 @@ export class Game {
       } else {
         // Solo: full client-side AI
         enemy.update(dt, this.player.x, this.player.y);
+      }
+    }
+
+    // ─── Solo: Boss attack system ───
+    if (!this.isMultiplayer) {
+      for (const enemy of this.enemies) {
+        if (!enemy.isBoss || enemy.dead) continue;
+        const ctrl = this.bossControllers.get(enemy);
+        if (!ctrl) continue;
+        const attackEvent = ctrl.update(dt, enemy, this.player.x, this.player.y);
+        if (attackEvent) {
+          for (const proj of attackEvent.projectiles) {
+            this.bossProjectiles.push(proj);
+            this.world.addChild(proj.container);
+          }
+          // Charge slam AoE
+          if (attackEvent.type === 'charge_slam' && attackEvent.aoeX !== undefined) {
+            const pdx = this.player.x - attackEvent.aoeX;
+            const pdy = this.player.y - attackEvent.aoeY!;
+            if (pdx * pdx + pdy * pdy < (attackEvent.aoeRadius! * attackEvent.aoeRadius!)) {
+              this.player.takeDamage(attackEvent.aoeDamage!);
+              this.ui.updateHp(this.player.hp, this.player.maxHp);
+              this.ui.flashDamage();
+              this.screenShake.trigger(10);
+            }
+            // Visual: AoE ring
+            this.particles.burst(attackEvent.aoeX, attackEvent.aoeY!, 0xff4400, 15, attackEvent.aoeRadius!);
+          }
+        }
+      }
+
+      // Update boss projectiles (solo — collision + damage)
+      for (let i = this.bossProjectiles.length - 1; i >= 0; i--) {
+        const proj = this.bossProjectiles[i];
+        proj.update(dt);
+        if (proj.dead) {
+          this.world.removeChild(proj.container);
+          proj.container.destroy();
+          this.bossProjectiles.splice(i, 1);
+          continue;
+        }
+        // Check collision with player
+        if (proj.hitTest(this.player.x, this.player.y, this.player.radius)) {
+          this.player.takeDamage(proj.damage);
+          this.ui.updateHp(this.player.hp, this.player.maxHp);
+          this.ui.flashDamage();
+          this.screenShake.trigger(4);
+          proj.dead = true;
+          this.world.removeChild(proj.container);
+          proj.container.destroy();
+          this.bossProjectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // Update boss projectiles visuals (multiplayer — visual only, server handles damage)
+    if (this.isMultiplayer) {
+      for (let i = this.bossProjectiles.length - 1; i >= 0; i--) {
+        const proj = this.bossProjectiles[i];
+        proj.update(dt);
+        if (proj.dead) {
+          this.world.removeChild(proj.container);
+          proj.container.destroy();
+          this.bossProjectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // ─── Update black holes ───
+    for (let i = this.blackHoles.length - 1; i >= 0; i--) {
+      const bh = this.blackHoles[i];
+      if (!this.isMultiplayer) {
+        bh.update(dt);
+      }
+      if (bh.dead) {
+        this.world.removeChild(bh.container);
+        bh.container.destroy();
+        if (bh.serverId >= 0) this.blackHoleById.delete(bh.serverId);
+        this.blackHoles.splice(i, 1);
+        continue;
+      }
+
+      // Pull + damage effects
+      // Pull player
+      const pullForce = bh.getPullForce(this.player.x, this.player.y);
+      if (pullForce) {
+        this.player.x += pullForce.fx * dt;
+        this.player.y += pullForce.fy * dt;
+      }
+      // Damage player (solo only — multi uses server pvp_damage)
+      if (!this.isMultiplayer && bh.isInDamageZone(this.player.x, this.player.y)) {
+        const dmg = Math.max(1, Math.floor(bh.damagePerSecond * dt));
+        this.player.takeDamage(dmg);
+        this.ui.updateHp(this.player.hp, this.player.maxHp);
+      }
+      // Pull + slow enemies (solo)
+      if (!this.isMultiplayer) {
+        for (const enemy of this.enemies) {
+          if (enemy.dead) continue;
+          const ef = bh.getPullForce(enemy.x, enemy.y);
+          if (ef) {
+            enemy.x += ef.fx * dt;
+            enemy.y += ef.fy * dt;
+          }
+          if (bh.isInDamageZone(enemy.x, enemy.y)) {
+            enemy.speed = Math.min(enemy.speed, enemy.baseSpeed * 0.2);
+          }
+        }
       }
     }
 
@@ -1078,7 +1281,8 @@ export class Game {
         } else {
           // Solo: getHits already applied baseDmg via takeDamage; apply crit bonus only
           if (isCrit) {
-            enemy.takeDamage(baseDmg); // extra crit damage
+            const fromAngle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
+            enemy.takeDamage(baseDmg, fromAngle); // extra crit damage
           }
           this.totalDamage += displayDmg;
         }
@@ -1160,6 +1364,7 @@ export class Game {
 
           this.world.removeChild(e.container);
           e.container.destroy();
+          if (e.isBoss) this.bossControllers.delete(e);
           this.kills++;
           this.ui.updateKills(this.kills);
           this.checkMilestone();
@@ -1493,24 +1698,33 @@ export class Game {
     const t = this.gameTime;
     if (t > 300) {
       const r = Math.random();
-      if (r < 0.08) defKey = 'pentagon';
-      else if (r < 0.18) defKey = 'charger';
-      else if (r < 0.30) defKey = 'splitter';
-      else if (r < 0.50) defKey = 'square';
-      else if (r < 0.75) defKey = 'diamond';
+      if (r < 0.06) defKey = 'pentagon';
+      else if (r < 0.14) defKey = 'charger';
+      else if (r < 0.22) defKey = 'splitter';
+      else if (r < 0.32) defKey = 'shield';
+      else if (r < 0.44) defKey = 'zigzag';
+      else if (r < 0.54) defKey = 'phaser';
+      else if (r < 0.64) defKey = 'orbiter';
     } else if (t > 180) {
       const r = Math.random();
-      if (r < 0.10) defKey = 'charger';
-      else if (r < 0.20) defKey = 'splitter';
-      else if (r < 0.35) defKey = 'square';
-      else if (r < 0.55) defKey = 'diamond';
+      if (r < 0.08) defKey = 'charger';
+      else if (r < 0.16) defKey = 'splitter';
+      else if (r < 0.26) defKey = 'shield';
+      else if (r < 0.38) defKey = 'zigzag';
+      else if (r < 0.48) defKey = 'phaser';
+      else if (r < 0.56) defKey = 'orbiter';
     } else if (t > 90) {
       const r = Math.random();
       if (r < 0.08) defKey = 'charger';
       else if (r < 0.15) defKey = 'splitter';
-      else if (r < 0.30) defKey = 'diamond';
+      else if (r < 0.25) defKey = 'zigzag';
+      else if (r < 0.32) defKey = 'phaser';
+    } else if (t > 60) {
+      const r = Math.random();
+      if (r < 0.20) defKey = 'zigzag';
+      else if (r < 0.28) defKey = 'shield';
     } else if (t > 45) {
-      if (Math.random() < 0.25) defKey = 'diamond';
+      if (Math.random() < 0.15) defKey = 'zigzag';
     }
 
     const def = ENEMY_DEFS[defKey];

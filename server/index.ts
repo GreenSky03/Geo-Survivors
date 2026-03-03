@@ -10,6 +10,7 @@ import type {
   S2C_TeamScores, S2C_Leaderboard, S2C_PvpDamage,
   S2C_PingSignal, S2C_WaveEvent, WeaponSyncData,
   S2C_EventWave, S2C_EventWaveEnd, S2C_MiniBossSpawn,
+  S2C_BossAttack, S2C_BlackHoleSpawn, S2C_BlackHoleSync, S2C_BlackHoleDespawn,
   S2C_PartyCreated, S2C_PartyJoined, S2C_PartyMemberJoin, S2C_PartyMemberLeave, S2C_PartyError,
 } from '../shared/protocol';
 import { TEAMS, MAP_HALF_W, MAP_HALF_H } from '../shared/protocol';
@@ -56,11 +57,13 @@ interface EnemyDef {
 
 const ENEMY_DEFS: Record<string, EnemyDef> = {
   triangle:  { type: 'triangle', hp: 15, speed: 80, damage: 8, xp: 2, radius: 10, shape: 'triangle' },
-  diamond:   { type: 'diamond', hp: 30, speed: 60, damage: 12, xp: 4, radius: 12, shape: 'diamond' },
-  square:    { type: 'square', hp: 50, speed: 50, damage: 15, xp: 6, radius: 14, shape: 'square' },
+  shield:    { type: 'shield', hp: 40, speed: 45, damage: 15, xp: 7, radius: 14, shape: 'square' },
   pentagon:  { type: 'pentagon', hp: 80, speed: 40, damage: 20, xp: 10, radius: 16, shape: 'pentagon' },
   charger:   { type: 'charger', hp: 25, speed: 50, damage: 20, xp: 5, radius: 11, shape: 'triangle' },
   splitter:  { type: 'splitter', hp: 40, speed: 55, damage: 10, xp: 4, radius: 14, shape: 'square' },
+  zigzag:    { type: 'zigzag', hp: 20, speed: 90, damage: 10, xp: 3, radius: 11, shape: 'hexagon' },
+  phaser:    { type: 'phaser', hp: 35, speed: 55, damage: 15, xp: 5, radius: 12, shape: 'star' },
+  orbiter:   { type: 'orbiter', hp: 25, speed: 70, damage: 12, xp: 4, radius: 10, shape: 'crescent' },
 };
 
 // ─── Server Enemy ───────────────────────────
@@ -89,6 +92,24 @@ interface RoomEnemy {
   targetMode: string;
   // Collision cooldowns per player (playerId → remaining seconds)
   damageCooldowns: Map<string, number>;
+  // Zigzag state
+  zigzagPhase: number;
+  // Phaser state
+  phaserState: 'approach' | 'telegraph' | 'invisible' | 'appear';
+  phaserTimer: number;
+  phaserStateTimer: number;
+  isPhasing: boolean;
+  // Orbiter state
+  orbitAngle: number;
+  orbitDashTimer: number;
+  orbitDashing: boolean;
+  orbitDashTime: number;
+  // Shield facing direction (rotation)
+  rotation: number;
+  // Boss attack state
+  bossAttackState: 'chase' | 'attack' | 'cooldown';
+  bossAttackTimer: number;
+  isBossAttacking: boolean;
 }
 
 // ─── Room ───────────────────────────────────
@@ -96,6 +117,15 @@ interface ServerPlayer {
   ws: WebSocket;
   data: PlayerData;
   lastUpdate: number;
+}
+
+interface ServerBlackHole {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  age: number;
+  dead: boolean;
 }
 
 interface Room {
@@ -122,6 +152,10 @@ interface Room {
   // Event wave timer
   nextEventWaveTime: number;
   activeEvent: { type: string; timer: number } | null;
+  // Black holes
+  blackHoles: Map<number, ServerBlackHole>;
+  nextBlackHoleId: number;
+  nextBlackHoleTime: number;
 }
 
 // ─── Party System ─────────────────────────
@@ -217,6 +251,9 @@ function findOrCreateRoom(preferCode?: string): Room {
     nextMiniBossTime: MINI_BOSS_INTERVAL_S,
     nextEventWaveTime: EVENT_WAVE_INTERVAL_S,
     activeEvent: null,
+    blackHoles: new Map(),
+    nextBlackHoleId: 1,
+    nextBlackHoleTime: 90,
   };
   rooms.set(code, room);
   console.log(`Room created: ${code}`);
@@ -249,24 +286,33 @@ function getPlayerCentroid(room: Room): { x: number; y: number } | null {
 function pickEnemyType(time: number): string {
   if (time > 300) {
     const r = Math.random();
-    if (r < 0.08) return 'pentagon';
-    if (r < 0.18) return 'charger';
-    if (r < 0.30) return 'splitter';
-    if (r < 0.50) return 'square';
-    if (r < 0.75) return 'diamond';
+    if (r < 0.06) return 'pentagon';
+    if (r < 0.14) return 'charger';
+    if (r < 0.22) return 'splitter';
+    if (r < 0.32) return 'shield';
+    if (r < 0.44) return 'zigzag';
+    if (r < 0.54) return 'phaser';
+    if (r < 0.64) return 'orbiter';
   } else if (time > 180) {
     const r = Math.random();
-    if (r < 0.10) return 'charger';
-    if (r < 0.20) return 'splitter';
-    if (r < 0.35) return 'square';
-    if (r < 0.55) return 'diamond';
+    if (r < 0.08) return 'charger';
+    if (r < 0.16) return 'splitter';
+    if (r < 0.26) return 'shield';
+    if (r < 0.38) return 'zigzag';
+    if (r < 0.48) return 'phaser';
+    if (r < 0.56) return 'orbiter';
   } else if (time > 90) {
     const r = Math.random();
     if (r < 0.08) return 'charger';
     if (r < 0.15) return 'splitter';
-    if (r < 0.30) return 'diamond';
+    if (r < 0.25) return 'zigzag';
+    if (r < 0.32) return 'phaser';
+  } else if (time > 60) {
+    const r = Math.random();
+    if (r < 0.20) return 'zigzag';
+    if (r < 0.28) return 'shield';
   } else if (time > 45) {
-    if (Math.random() < 0.25) return 'diamond';
+    if (Math.random() < 0.15) return 'zigzag';
   }
   return 'triangle';
 }
@@ -300,6 +346,24 @@ function createRoomEnemy(
     vx: 0, vy: 0,
     targetMode,
     damageCooldowns: new Map(),
+    // Zigzag
+    zigzagPhase: Math.random() * Math.PI * 2,
+    // Phaser
+    phaserState: 'approach' as const,
+    phaserTimer: 3 + Math.random() * 1.5,
+    phaserStateTimer: 0,
+    isPhasing: false,
+    // Orbiter
+    orbitAngle: Math.random() * Math.PI * 2,
+    orbitDashTimer: 4 + Math.random() * 2,
+    orbitDashing: false,
+    orbitDashTime: 0,
+    // Shield
+    rotation: 0,
+    // Boss attack
+    bossAttackState: 'chase' as const,
+    bossAttackTimer: 3 + Math.random() * 2,
+    isBossAttacking: false,
   };
 }
 
@@ -422,7 +486,7 @@ function spawnMiniBoss(room: Room): void {
   const centroid = getPlayerCentroid(room);
   if (!centroid) return;
 
-  const types = ['charger', 'pentagon', 'square'];
+  const types = ['charger', 'pentagon', 'shield'];
   const typeKey = types[Math.floor(Math.random() * types.length)];
   const bossTypes = ['charger_elite', 'splitter_king', 'shield_bearer'];
   const bossType = bossTypes[Math.floor(Math.random() * bossTypes.length)];
@@ -594,7 +658,12 @@ function updateEnemies(room: Room): void {
     const dy = targetY - enemy.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Charger behavior
+    // Update rotation toward target
+    if (dist > 1) {
+      enemy.rotation = Math.atan2(dy, dx);
+    }
+
+    // Enemy-type-specific movement
     if (enemy.type === 'charger') {
       enemy.chargeTimer -= TICK_S;
       if (enemy.isCharging) {
@@ -621,7 +690,115 @@ function updateEnemies(room: Room): void {
         enemy.vx = 0;
         enemy.vy = 0;
       }
+    } else if (enemy.type === 'zigzag') {
+      enemy.zigzagPhase += 5 * TICK_S;
+      if (dist > 1) {
+        const moveAngle = Math.atan2(dy, dx);
+        const perpX = -Math.sin(moveAngle);
+        const perpY = Math.cos(moveAngle);
+        const sinOffset = Math.sin(enemy.zigzagPhase) * 80;
+        const forwardX = (dx / dist) * enemy.speed;
+        const forwardY = (dy / dist) * enemy.speed;
+        enemy.vx = forwardX + perpX * sinOffset * 3;
+        enemy.vy = forwardY + perpY * sinOffset * 3;
+        enemy.x += enemy.vx * TICK_S;
+        enemy.y += enemy.vy * TICK_S;
+      } else {
+        enemy.vx = 0;
+        enemy.vy = 0;
+      }
+    } else if (enemy.type === 'phaser') {
+      switch (enemy.phaserState) {
+        case 'approach':
+          enemy.phaserTimer -= TICK_S;
+          if (dist > 1) {
+            enemy.vx = (dx / dist) * enemy.speed;
+            enemy.vy = (dy / dist) * enemy.speed;
+            enemy.x += enemy.vx * TICK_S;
+            enemy.y += enemy.vy * TICK_S;
+          }
+          if (enemy.phaserTimer <= 0) {
+            enemy.phaserState = 'telegraph';
+            enemy.phaserStateTimer = 0.3;
+            enemy.isPhasing = true;
+          }
+          break;
+        case 'telegraph':
+          enemy.phaserStateTimer -= TICK_S;
+          enemy.vx = 0;
+          enemy.vy = 0;
+          if (enemy.phaserStateTimer <= 0) {
+            enemy.phaserState = 'invisible';
+            enemy.phaserStateTimer = 0.2;
+          }
+          break;
+        case 'invisible':
+          enemy.phaserStateTimer -= TICK_S;
+          enemy.vx = 0;
+          enemy.vy = 0;
+          if (enemy.phaserStateTimer <= 0) {
+            const tpAngle = Math.random() * Math.PI * 2;
+            const tpDist = 80 + Math.random() * 60;
+            enemy.x = targetX + Math.cos(tpAngle) * tpDist;
+            enemy.y = targetY + Math.sin(tpAngle) * tpDist;
+            enemy.phaserState = 'appear';
+            enemy.phaserStateTimer = 0.1;
+          }
+          break;
+        case 'appear':
+          enemy.phaserStateTimer -= TICK_S;
+          enemy.vx = 0;
+          enemy.vy = 0;
+          if (enemy.phaserStateTimer <= 0) {
+            enemy.phaserState = 'approach';
+            enemy.phaserTimer = 3 + Math.random() * 1.5;
+            enemy.isPhasing = false;
+          }
+          break;
+      }
+    } else if (enemy.type === 'orbiter') {
+      const orbitRadius = 200;
+      if (enemy.orbitDashing) {
+        enemy.orbitDashTime -= TICK_S;
+        if (dist > 20) {
+          enemy.vx = (dx / dist) * enemy.speed * 3;
+          enemy.vy = (dy / dist) * enemy.speed * 3;
+          enemy.x += enemy.vx * TICK_S;
+          enemy.y += enemy.vy * TICK_S;
+        }
+        if (enemy.orbitDashTime <= 0) {
+          enemy.orbitDashing = false;
+          enemy.orbitDashTimer = 4 + Math.random() * 2;
+        }
+      } else {
+        enemy.orbitDashTimer -= TICK_S;
+        if (enemy.orbitDashTimer <= 0 && dist < orbitRadius + 50) {
+          enemy.orbitDashing = true;
+          enemy.orbitDashTime = 0.4;
+        } else if (dist > orbitRadius + 50) {
+          if (dist > 1) {
+            enemy.vx = (dx / dist) * enemy.speed;
+            enemy.vy = (dy / dist) * enemy.speed;
+            enemy.x += enemy.vx * TICK_S;
+            enemy.y += enemy.vy * TICK_S;
+          }
+        } else {
+          enemy.orbitAngle += (enemy.speed / orbitRadius) * TICK_S;
+          const ox = targetX + Math.cos(enemy.orbitAngle) * orbitRadius;
+          const oy = targetY + Math.sin(enemy.orbitAngle) * orbitRadius;
+          const odx = ox - enemy.x;
+          const ody = oy - enemy.y;
+          const odist = Math.sqrt(odx * odx + ody * ody);
+          if (odist > 1) {
+            enemy.vx = (odx / odist) * enemy.speed * 1.5;
+            enemy.vy = (ody / odist) * enemy.speed * 1.5;
+            enemy.x += enemy.vx * TICK_S;
+            enemy.y += enemy.vy * TICK_S;
+          }
+        }
+      }
     } else if (dist > 1) {
+      // Normal chase (triangle, pentagon, shield, splitter)
       enemy.vx = (dx / dist) * enemy.speed;
       enemy.vy = (dy / dist) * enemy.speed;
       enemy.x += enemy.vx * TICK_S;
@@ -629,6 +806,33 @@ function updateEnemies(room: Room): void {
     } else {
       enemy.vx = 0;
       enemy.vy = 0;
+    }
+
+    // Boss attack state machine
+    if (enemy.isBoss && room.boss.active) {
+      enemy.bossAttackTimer -= TICK_S;
+      switch (enemy.bossAttackState) {
+        case 'chase':
+          enemy.isBossAttacking = false;
+          if (enemy.bossAttackTimer <= 0) {
+            enemy.bossAttackState = 'attack';
+            enemy.isBossAttacking = true;
+            // Execute attack
+            executeBossAttack(room, enemy, targetX, targetY);
+          }
+          break;
+        case 'attack':
+          enemy.bossAttackState = 'cooldown';
+          enemy.bossAttackTimer = 1;
+          break;
+        case 'cooldown':
+          enemy.isBossAttacking = false;
+          if (enemy.bossAttackTimer <= 0) {
+            enemy.bossAttackState = 'chase';
+            enemy.bossAttackTimer = 3 + Math.random() * 2;
+          }
+          break;
+      }
     }
 
     // Clamp enemy to map boundaries
@@ -681,14 +885,210 @@ function updateEnemies(room: Room): void {
   }
 }
 
+// ─── Boss Attack Execution ──────────────────
+function executeBossAttack(room: Room, boss: RoomEnemy, targetX: number, targetY: number): void {
+  const attacks: Array<'radial_burst' | 'aimed_shot' | 'charge_slam'> = ['radial_burst', 'aimed_shot', 'charge_slam'];
+  const attackType = attacks[Math.floor(Math.random() * attacks.length)];
+  const baseDmg = boss.hp > 0 ? Math.floor((ENEMY_DEFS.pentagon?.damage ?? 20) * getRoomDifficulty(room)) : 20;
+
+  const msg: S2C_BossAttack = {
+    type: 'boss_attack',
+    attackType,
+    bossId: boss.id,
+    x: boss.x,
+    y: boss.y,
+    projectiles: [],
+  };
+
+  switch (attackType) {
+    case 'radial_burst': {
+      const count = 8 + Math.floor(Math.random() * 5);
+      const speed = 300;
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 / count) * i;
+        msg.projectiles.push({
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          damage: Math.floor(baseDmg * 0.6),
+          lifetime: 2,
+        });
+      }
+      break;
+    }
+    case 'aimed_shot': {
+      const dx = targetX - boss.x;
+      const dy = targetY - boss.y;
+      const baseAngle = Math.atan2(dy, dx);
+      const speed = 450;
+      const spread = (15 * Math.PI) / 180;
+      for (let i = -1; i <= 1; i++) {
+        const angle = baseAngle + spread * i;
+        msg.projectiles.push({
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          damage: Math.floor(baseDmg * 0.6),
+          lifetime: 2,
+        });
+      }
+      break;
+    }
+    case 'charge_slam': {
+      msg.aoe = {
+        x: targetX,
+        y: targetY,
+        radius: 120,
+        damage: Math.floor(baseDmg * 0.8),
+      };
+      // Server-side AoE damage to nearby players
+      for (const p of room.players.values()) {
+        if (!p.data.alive) continue;
+        const pdx = p.data.x - targetX;
+        const pdy = p.data.y - targetY;
+        if (pdx * pdx + pdy * pdy < 120 * 120) {
+          send(p.ws, {
+            type: 'pvp_damage',
+            fromId: `boss_${boss.id}`,
+            fromTeam: 'red',
+            damage: Math.floor(baseDmg * 0.8),
+          } as S2C_PvpDamage);
+        }
+      }
+      break;
+    }
+  }
+
+  // Server-side projectile collision (simplified: immediate check at spawn)
+  // For radial_burst/aimed_shot, damage is done client-side in solo, server sends pvp_damage in multi
+  if (attackType !== 'charge_slam') {
+    // Schedule delayed damage checks — for simplicity, we do proximity checks on next few ticks
+    // The client handles visual projectiles; server just sends the event
+  }
+
+  broadcast(room, msg);
+}
+
+// ─── Black Hole Management ──────────────────
+const BH_GROW = 5;
+const BH_PEAK = 8;
+const BH_FADE = 3;
+const BH_TOTAL = BH_GROW + BH_PEAK + BH_FADE;
+const BH_MAX_RADIUS = 120;
+const BH_PULL_SPEED = 200;
+const BH_DMG_PS = 15;
+const BH_MAX_COUNT = 2;
+
+function spawnBlackHole(room: Room): void {
+  if (room.blackHoles.size >= BH_MAX_COUNT) return;
+  const centroid = getPlayerCentroid(room);
+  if (!centroid) return;
+
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 300 + Math.random() * 300;
+  const x = centroid.x + Math.cos(angle) * dist;
+  const y = centroid.y + Math.sin(angle) * dist;
+  const clamped = clampToMap(x, y);
+
+  const id = room.nextBlackHoleId++;
+  const bh: ServerBlackHole = { id, x: clamped.x, y: clamped.y, radius: 10, age: 0, dead: false };
+  room.blackHoles.set(id, bh);
+
+  const msg: S2C_BlackHoleSpawn = { type: 'blackhole_spawn', id, x: clamped.x, y: clamped.y };
+  broadcast(room, msg);
+  console.log(`[${room.code}] BlackHole #${id} spawned at (${Math.round(clamped.x)}, ${Math.round(clamped.y)})`);
+}
+
+function updateBlackHoles(room: Room): void {
+  const players = Array.from(room.players.values()).filter(p => p.data.alive);
+
+  for (const bh of room.blackHoles.values()) {
+    if (bh.dead) continue;
+    bh.age += TICK_S;
+
+    if (bh.age >= BH_TOTAL) {
+      bh.dead = true;
+      const msg: S2C_BlackHoleDespawn = { type: 'blackhole_despawn', id: bh.id };
+      broadcast(room, msg);
+      continue;
+    }
+
+    // Calculate current phase
+    let t: number;
+    let pullStrength: number;
+    let dmgPs: number;
+    if (bh.age < BH_GROW) {
+      t = bh.age / BH_GROW;
+      bh.radius = 10 + (BH_MAX_RADIUS - 10) * t;
+      pullStrength = BH_PULL_SPEED * t;
+      dmgPs = BH_DMG_PS * t;
+    } else if (bh.age < BH_GROW + BH_PEAK) {
+      bh.radius = BH_MAX_RADIUS;
+      pullStrength = BH_PULL_SPEED;
+      dmgPs = BH_DMG_PS;
+    } else {
+      t = 1 - (bh.age - BH_GROW - BH_PEAK) / BH_FADE;
+      bh.radius = BH_MAX_RADIUS * Math.max(0, t);
+      pullStrength = BH_PULL_SPEED * Math.max(0, t);
+      dmgPs = BH_DMG_PS * Math.max(0, t);
+    }
+
+    const pullRange = bh.radius * 2.5;
+
+    // Pull + slow enemies
+    for (const enemy of room.enemies.values()) {
+      if (enemy.dead) continue;
+      const edx = bh.x - enemy.x;
+      const edy = bh.y - enemy.y;
+      const eDist = Math.sqrt(edx * edx + edy * edy);
+      if (eDist < pullRange && eDist > 5) {
+        const factor = pullStrength * (1 - eDist / pullRange) * TICK_S;
+        enemy.x += (edx / eDist) * factor;
+        enemy.y += (edy / eDist) * factor;
+        // Slow enemies inside the hole radius
+        if (eDist < bh.radius) {
+          enemy.speed = Math.min(enemy.speed, enemy.baseSpeed * 0.2);
+        }
+      }
+    }
+
+    // Pull + damage players
+    for (const p of players) {
+      const pdx = bh.x - p.data.x;
+      const pdy = bh.y - p.data.y;
+      const pDist = Math.sqrt(pdx * pdx + pdy * pdy);
+      if (pDist < pullRange && pDist > 5) {
+        // Pull (client handles visual, we just apply damage)
+        // Damage if inside damage zone
+        if (pDist < bh.radius) {
+          const dmg = Math.max(1, Math.floor(dmgPs * TICK_S));
+          send(p.ws, {
+            type: 'pvp_damage',
+            fromId: `blackhole_${bh.id}`,
+            fromTeam: 'red',
+            damage: dmg,
+          } as S2C_PvpDamage);
+        }
+      }
+    }
+  }
+
+  // Cleanup dead black holes
+  for (const [id, bh] of room.blackHoles) {
+    if (bh.dead) room.blackHoles.delete(id);
+  }
+}
+
 // ─── Sync helpers ───────────────────────────
 function buildEnemySyncData(room: Room): number[] {
   const data: number[] = [];
   for (const e of room.enemies.values()) {
     if (e.dead) continue;
-    // flags: bit0 = isCharging, bit1 = isElite, bit2 = isSlowed
+    // flags: bit0=isCharging, bit1=isElite, bit2=isSlowed, bit3=isPhasing, bit4=isBossAttacking
     const isSlowed = e.speed < e.baseSpeed * 0.95;
-    const flags = (e.isCharging ? 1 : 0) | (e.isElite ? 2 : 0) | (isSlowed ? 4 : 0);
+    const flags = (e.isCharging ? 1 : 0)
+      | (e.isElite ? 2 : 0)
+      | (isSlowed ? 4 : 0)
+      | (e.isPhasing ? 8 : 0)
+      | (e.isBossAttacking ? 16 : 0);
     data.push(e.id, Math.round(e.x), Math.round(e.y), e.hp, flags,
               Math.round(e.vx), Math.round(e.vy));
   }
@@ -877,7 +1277,21 @@ wss.on('connection', (ws: WebSocket) => {
         if (!enemy || enemy.dead) return;
 
         // Anti-cheat: cap damage per hit at 200
-        const dmg = Math.min(msg.damage, 200);
+        let dmg = Math.min(msg.damage, 200);
+
+        // Shield: front 120° arc reduces damage by 75%
+        if (enemy.type === 'shield') {
+          const attackAngle = Math.atan2(sp.data.y - enemy.y, sp.data.x - enemy.x);
+          let angleDiff = attackAngle - enemy.rotation;
+          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+          // Attack coming from the front of the shield (enemy faces player, so front = toward attacker)
+          // We check if attack is within ±60° of the enemy's facing direction
+          if (Math.abs(angleDiff) < Math.PI / 3) {
+            dmg = Math.floor(dmg * 0.25);
+          }
+        }
+
         enemy.hp -= dmg;
 
         // Boss damage tracking
@@ -1177,6 +1591,15 @@ setInterval(() => {
     // Update enemy positions
     updateEnemies(room);
 
+    // Black hole spawning
+    if (room.serverTime >= room.nextBlackHoleTime && room.blackHoles.size < BH_MAX_COUNT) {
+      spawnBlackHole(room);
+      room.nextBlackHoleTime = room.serverTime + 60 + Math.random() * 30;
+    }
+
+    // Update black holes
+    updateBlackHoles(room);
+
     // Broadcast player positions
     room.playerSyncAccum += TICK_MS;
     if (room.playerSyncAccum >= PLAYER_SYNC_MS) {
@@ -1197,6 +1620,18 @@ setInterval(() => {
         data: buildEnemySyncData(room),
       };
       broadcast(room, esync);
+
+      // Black hole sync (alongside enemy sync)
+      if (room.blackHoles.size > 0) {
+        const holes: { id: number; radius: number; age: number }[] = [];
+        for (const bh of room.blackHoles.values()) {
+          if (!bh.dead) holes.push({ id: bh.id, radius: Math.round(bh.radius), age: Math.round(bh.age * 10) / 10 });
+        }
+        if (holes.length > 0) {
+          const bhSync: S2C_BlackHoleSync = { type: 'blackhole_sync', holes };
+          broadcast(room, bhSync);
+        }
+      }
     }
 
     // Scoreboard

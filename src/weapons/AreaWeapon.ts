@@ -175,7 +175,8 @@ export class AreaWeapon extends WeaponBase {
         for (const enemy of enemies) {
           if (enemy.dead) continue;
           if (distance(px, py, enemy.x, enemy.y) < d.radius) {
-            enemy.takeDamage(d.damage);
+            const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
+            enemy.takeDamage(d.damage, fromAngle);
             hits.push(enemy);
           }
         }
@@ -190,7 +191,8 @@ export class AreaWeapon extends WeaponBase {
       for (const enemy of enemies) {
         if (enemy.dead) continue;
         if (distance(px, py, enemy.x, enemy.y) < d.radius) {
-          enemy.takeDamage(d.damage);
+          const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
+          enemy.takeDamage(d.damage, fromAngle);
           hits.push(enemy);
         }
       }

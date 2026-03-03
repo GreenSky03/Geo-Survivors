@@ -25,7 +25,7 @@ export interface WeaponSyncData {
 /** Server-managed enemy data */
 export interface ServerEnemy {
   id: number;
-  type: string;     // 'triangle' | 'diamond' | 'square' | 'pentagon' | 'charger' | 'splitter' | 'elite_*'
+  type: string;     // 'triangle' | 'shield' | 'pentagon' | 'charger' | 'splitter' | 'zigzag' | 'phaser' | 'orbiter'
   x: number;
   y: number;
   hp: number;
@@ -34,6 +34,15 @@ export interface ServerEnemy {
   isElite?: boolean;
   isCharging?: boolean;
 }
+
+/**
+ * enemies_sync flags bitmap:
+ *   bit0 = isCharging (charger dash)
+ *   bit1 = isElite
+ *   bit2 = isSlowed (ForceField)
+ *   bit3 = isPhasing (phaser telegraph/invisible)
+ *   bit4 = isBossAttacking (boss attack state)
+ */
 
 // ─── Client → Server ────────────────────────
 export interface C2S_Join {
@@ -141,7 +150,7 @@ export interface S2C_PlayersSync {
 // Batch enemy sync (positions + hp + flags)
 export interface S2C_EnemiesSync {
   type: 'enemies_sync';
-  /** [id, x, y, hp, flags][] - compact format. flags: bit0=isCharging, bit1=isElite */
+  /** [id, x, y, hp, flags, vx, vy][] - compact format. flags: bit0=isCharging, bit1=isElite, bit2=isSlowed, bit3=isPhasing, bit4=isBossAttacking */
   data: number[];
 }
 
@@ -234,6 +243,35 @@ export interface S2C_MiniBossSpawn {
   bossType: string;
 }
 
+// ─── Boss Attack ───
+export interface S2C_BossAttack {
+  type: 'boss_attack';
+  attackType: 'radial_burst' | 'aimed_shot' | 'charge_slam';
+  bossId: number;
+  x: number;
+  y: number;
+  projectiles: { vx: number; vy: number; damage: number; lifetime: number }[];
+  aoe?: { x: number; y: number; radius: number; damage: number };
+}
+
+// ─── BlackHole ───
+export interface S2C_BlackHoleSpawn {
+  type: 'blackhole_spawn';
+  id: number;
+  x: number;
+  y: number;
+}
+
+export interface S2C_BlackHoleSync {
+  type: 'blackhole_sync';
+  holes: { id: number; radius: number; age: number }[];
+}
+
+export interface S2C_BlackHoleDespawn {
+  type: 'blackhole_despawn';
+  id: number;
+}
+
 // ─── Party system ───
 export interface C2S_CreateParty { type: 'create_party'; }
 export interface C2S_JoinParty { type: 'join_party'; code: string; }
@@ -256,4 +294,5 @@ export type S2C_Message =
   | S2C_TeamScores | S2C_Leaderboard | S2C_Chat
   | S2C_PingSignal | S2C_WaveEvent
   | S2C_EventWave | S2C_EventWaveEnd | S2C_MiniBossSpawn
+  | S2C_BossAttack | S2C_BlackHoleSpawn | S2C_BlackHoleSync | S2C_BlackHoleDespawn
   | S2C_PartyCreated | S2C_PartyJoined | S2C_PartyMemberJoin | S2C_PartyMemberLeave | S2C_PartyError;

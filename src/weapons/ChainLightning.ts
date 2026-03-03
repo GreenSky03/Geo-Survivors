@@ -141,7 +141,8 @@ export class ChainLightning extends WeaponBase {
 
         // Apply damage and collect hits
         for (const target of chainTargets) {
-          target.takeDamage(d.damage);
+          const fromAngle = Math.atan2(py - target.y, px - target.x);
+          target.takeDamage(d.damage, fromAngle);
           this.pendingHits.push(target);
         }
 

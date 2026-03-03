@@ -187,7 +187,8 @@ export class BulletWeapon extends WeaponBase {
         beam.damageTimer -= dt;
         if (beam.damageTimer <= 0) {
           beam.damageTimer = 0.1;
-          beam.target.takeDamage(d.damage);
+          const fromAngle = Math.atan2(py - beam.target.y, px - beam.target.x);
+          beam.target.takeDamage(d.damage, fromAngle);
           this.pendingBeamHits.push(beam.target);
         }
       }
@@ -248,7 +249,8 @@ export class BulletWeapon extends WeaponBase {
         if (enemy.dead || b.hitSet.has(enemy)) continue;
         const dist = distance(b.x, b.y, enemy.x, enemy.y);
         if (dist < 6 + enemy.radius) {
-          enemy.takeDamage(d.damage);
+          const fromAngle = Math.atan2(b.y - enemy.y, b.x - enemy.x);
+          enemy.takeDamage(d.damage, fromAngle);
           b.hitSet.add(enemy);
           b.pierceLeft--;
           hits.push(enemy);

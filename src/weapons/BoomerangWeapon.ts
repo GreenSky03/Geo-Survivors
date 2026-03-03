@@ -260,7 +260,8 @@ export class BoomerangWeapon extends WeaponBase {
           if (enemy.dead) continue;
           const dist = distance(g.x, g.y, enemy.x, enemy.y);
           if (dist < 12 + enemy.radius) {
-            enemy.takeDamage(d.damage);
+            const fromAngle = Math.atan2(g.y - enemy.y, g.x - enemy.x);
+            enemy.takeDamage(d.damage, fromAngle);
             hits.push(enemy);
           }
         }
@@ -273,7 +274,8 @@ export class BoomerangWeapon extends WeaponBase {
         if (enemy.dead || b.hitSet.has(enemy)) continue;
         const dist = distance(b.x, b.y, enemy.x, enemy.y);
         if (dist < 10 + enemy.radius) {
-          enemy.takeDamage(d.damage);
+          const fromAngle = Math.atan2(b.y - enemy.y, b.x - enemy.x);
+          enemy.takeDamage(d.damage, fromAngle);
           b.hitSet.add(enemy);
           hits.push(enemy);
         }

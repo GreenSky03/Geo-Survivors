@@ -22,10 +22,21 @@ export type NetEventMap = {
   chat: { name: string; team: Team; msg: string };
   ping_signal: { x: number; y: number; team: Team; playerName: string };
   wave_event: { waveNumber: number; enemyCount: number };
-  // New events
+  // Events
   event_wave_start: { event: string; duration: number };
   event_wave_end: { event: string };
   mini_boss_spawn: { enemy: ServerEnemy; bossType: string };
+  // Boss attack
+  boss_attack: {
+    attackType: string; bossId: number; x: number; y: number;
+    projectiles: { vx: number; vy: number; damage: number; lifetime: number }[];
+    aoe?: { x: number; y: number; radius: number; damage: number };
+  };
+  // BlackHole
+  blackhole_spawn: { id: number; x: number; y: number };
+  blackhole_sync: { id: number; radius: number; age: number }[];
+  blackhole_despawn: { id: number };
+  // Party
   party_created: { code: string };
   party_joined: { code: string; members: string[] };
   party_member_join: { name: string };
@@ -78,7 +89,6 @@ export class NetworkManager {
     this.ws.onclose = () => {
       this.connected = false;
       this.emit('disconnected', undefined);
-      // Exponential backoff: 1s → 2s → 4s → 8s → ... max 30s
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
       this.reconnectTimer = window.setTimeout(() => {
@@ -111,13 +121,11 @@ export class NetworkManager {
       case 'player_join': this.emit('player_join', msg.player); break;
       case 'player_leave': this.emit('player_leave', msg.id); break;
       case 'players_sync':
-        // Estimate latency from sync arrival time
         if (this.lastPingTime > 0) {
           const now = performance.now();
           const elapsed = now - this.lastPingTime;
-          // players_sync sent every 100ms, estimate round-trip
           if (elapsed < 1000) {
-            this.latencyMs = Math.round(elapsed * 0.5); // half round-trip
+            this.latencyMs = Math.round(elapsed * 0.5);
           }
           this.lastPingTime = now;
         }
@@ -141,6 +149,13 @@ export class NetworkManager {
       case 'event_wave_start': this.emit('event_wave_start', { event: (msg as any).event, duration: (msg as any).duration }); break;
       case 'event_wave_end': this.emit('event_wave_end', { event: (msg as any).event }); break;
       case 'mini_boss_spawn': this.emit('mini_boss_spawn', { enemy: (msg as any).enemy, bossType: (msg as any).bossType }); break;
+      case 'boss_attack': this.emit('boss_attack', {
+        attackType: msg.attackType, bossId: msg.bossId, x: msg.x, y: msg.y,
+        projectiles: msg.projectiles, aoe: msg.aoe,
+      }); break;
+      case 'blackhole_spawn': this.emit('blackhole_spawn', { id: msg.id, x: msg.x, y: msg.y }); break;
+      case 'blackhole_sync': this.emit('blackhole_sync', msg.holes); break;
+      case 'blackhole_despawn': this.emit('blackhole_despawn', { id: msg.id }); break;
       case 'party_created': this.emit('party_created', { code: (msg as any).code }); break;
       case 'party_joined': this.emit('party_joined', { code: (msg as any).code, members: (msg as any).members }); break;
       case 'party_member_join': this.emit('party_member_join', { name: (msg as any).name }); break;
