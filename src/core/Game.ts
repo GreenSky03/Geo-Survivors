@@ -1403,7 +1403,7 @@ export class Game {
       this.xpToNext = Math.floor(10 * Math.pow(this.level, 1.3));
       this.ui.updateLevel(this.level);
       this.sound.playLevelUp();
-      if (this.isMultiplayer && this.levelUpShown) {
+      if (this.levelUpShown) {
         // Queue it if a choice screen is already visible
         this.levelUpPending++;
       } else {
