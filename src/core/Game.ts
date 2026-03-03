@@ -1654,8 +1654,11 @@ export class Game {
   }
 
   private showLevelUp(): void {
-    // Game continues running during level-up (both solo and multiplayer)
     this.levelUpShown = true;
+    // Solo: pause game during level-up selection
+    if (!this.isMultiplayer) {
+      this.paused = true;
+    }
     const choices = this.levelUpSystem.generateChoices(this.player, this.weapons);
 
     const onChoice = (choice: UpgradeChoice) => {
@@ -1682,6 +1685,9 @@ export class Game {
       if (this.levelUpPending > 0) {
         this.levelUpPending--;
         this.showLevelUp();
+      } else if (!this.isMultiplayer) {
+        // Solo: resume game after all level-ups are processed
+        this.paused = false;
       }
     };
 
