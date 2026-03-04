@@ -170,6 +170,8 @@ interface Room {
   nextBlackHoleTime: number;
   // Boss projectiles (server-tracked for damage)
   bossProjectiles: ServerBossProjectile[];
+  // Previous difficulty for detecting difficulty drops
+  prevDifficulty: number;
 }
 
 // ─── Party System ─────────────────────────
@@ -219,20 +221,30 @@ function clampToMap(x: number, y: number): { x: number; y: number } {
   };
 }
 
-// ─── Dynamic difficulty: time + average player level ───
+// ─── Dynamic difficulty: time + average alive player level, scaled by alive ratio ───
 function getRoomDifficulty(room: Room): number {
   const mins = room.serverTime / 60;
-  // Reduced time component (was: mins*0.4 + (mins/10)^1.5)
   const timeComponent = 1 + mins * 0.2 + Math.pow(mins / 15, 1.3);
-  // Player level component: avg level across all players
+
+  const allPlayers = Array.from(room.players.values());
+  const alivePlayers = allPlayers.filter(p => p.data.alive);
+  const totalPlayers = allPlayers.length;
+
+  // Use alive players' avg level (dead players excluded from difficulty calc)
   let avgLevel = 1;
-  if (room.players.size > 0) {
+  if (alivePlayers.length > 0) {
     let totalLevel = 0;
-    for (const p of room.players.values()) totalLevel += p.data.level;
-    avgLevel = totalLevel / room.players.size;
+    for (const p of alivePlayers) totalLevel += p.data.level;
+    avgLevel = totalLevel / alivePlayers.length;
   }
   const levelComponent = avgLevel * 0.25;
-  return timeComponent + levelComponent;
+
+  // Scale difficulty by alive player ratio (fewer alive → lower difficulty)
+  // When all alive: 1.0, half alive: 0.6, none alive: 0.2
+  const aliveRatio = totalPlayers > 0 ? alivePlayers.length / totalPlayers : 1;
+  const aliveScale = 0.2 + 0.8 * aliveRatio;
+
+  return (timeComponent + levelComponent) * aliveScale;
 }
 
 function findOrCreateRoom(preferCode?: string): Room {
@@ -269,6 +281,7 @@ function findOrCreateRoom(preferCode?: string): Room {
     nextBlackHoleId: 1,
     nextBlackHoleTime: 90,
     bossProjectiles: [],
+    prevDifficulty: 1,
   };
   rooms.set(code, room);
   console.log(`Room created: ${code}`);
@@ -1237,7 +1250,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8192 });
 wss.on('error', (err) => { console.error('WSS error:', err.message); });
 server.listen(PORT, () => {
   console.log(`Geo Survivors server running on http://localhost:${PORT} (ws: /ws)`);
@@ -1668,17 +1681,44 @@ setInterval(() => {
 
     room.serverTime += TICK_S;
 
-    // Spawn enemies
+    // Spawn enemies (only if alive players exist)
     const difficulty = getRoomDifficulty(room);
+    const alivePlayers = Array.from(room.players.values()).filter(p => p.data.alive);
     const spawnInterval = Math.max(0.3, 1.2 / difficulty);
     room.spawnTimer -= TICK_S;
-    if (room.spawnTimer <= 0 && room.enemies.size < MAX_ENEMIES) {
+    if (room.spawnTimer <= 0 && room.enemies.size < MAX_ENEMIES && alivePlayers.length > 0) {
       room.spawnTimer = spawnInterval;
-      const count = Math.floor(1 + difficulty * 0.3 + room.players.size * 0.2);
+      const count = Math.floor(1 + difficulty * 0.3 + alivePlayers.length * 0.2);
       for (let i = 0; i < count && room.enemies.size < MAX_ENEMIES; i++) {
         spawnEnemy(room);
       }
     }
+
+    // Dynamic difficulty adjustment: when difficulty drops significantly,
+    // cull excess enemies to match the new target count
+    if (difficulty < room.prevDifficulty * 0.7 && alivePlayers.length < room.players.size) {
+      // Target enemy count based on current difficulty
+      const targetMax = Math.max(10, Math.floor(MAX_ENEMIES * (difficulty / Math.max(1, room.prevDifficulty))));
+      const excess = room.enemies.size - targetMax;
+      if (excess > 0) {
+        // Remove the farthest non-boss enemies from alive players
+        const enemies = Array.from(room.enemies.values())
+          .filter(e => !e.dead && !e.isBoss);
+        // Sort by distance from nearest alive player (farthest first)
+        enemies.sort((a, b) => {
+          const distA = Math.min(...alivePlayers.map(p => (p.data.x - a.x) ** 2 + (p.data.y - a.y) ** 2));
+          const distB = Math.min(...alivePlayers.map(p => (p.data.x - b.x) ** 2 + (p.data.y - b.y) ** 2));
+          return distB - distA;
+        });
+        const toRemove = Math.min(excess, Math.ceil(enemies.length * 0.3));
+        for (let i = 0; i < toRemove && i < enemies.length; i++) {
+          const e = enemies[i];
+          e.dead = true;
+          broadcast(room, { type: 'enemy_death', enemyId: e.id, killerTeam: 'blue', x: e.x, y: e.y, xp: 0, isBoss: false } as S2C_EnemyDeath);
+        }
+      }
+    }
+    room.prevDifficulty = difficulty;
 
     // Wave event (periodic large wave)
     if (room.serverTime >= room.nextWaveEventTime && room.players.size > 0) {

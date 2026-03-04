@@ -253,6 +253,14 @@ const translations: Record<string, Record<Lang, string>> = {
   'spectate.next': { en: 'NEXT', ko: '다음' },
   'spectate.prev': { en: 'PREV', ko: '이전' },
 
+  // ─── Ping / Chat ───
+  'ping.hint': { en: 'G: Ping · Enter: Chat', ko: 'G: 핑 · Enter: 채팅' },
+  'chat.placeholder': { en: 'Type a message...', ko: '메시지를 입력하세요...' },
+  'respawn.timer': { en: 'Respawning in {secs}...', ko: '{secs}초 후 부활...' },
+  'respawn.hint': { en: 'You will respawn at a safe location', ko: '안전한 위치에서 부활합니다' },
+  'respawn.eliminated': { en: 'ELIMINATED', ko: '사망' },
+  'gameover.toTitle': { en: 'TITLE', ko: '타이틀' },
+
   // ─── Emote ───
   'emote.hint': { en: 'Press E for emotes', ko: 'E키로 이모트' },
 

@@ -377,6 +377,7 @@ export class UI {
     this.onRestartCallback = onRestart;
     this.gameOverTitle.textContent = t('gameover.title');
     this.restartBtn.textContent = t('gameover.restart');
+    document.getElementById('gameover-quit-btn')!.textContent = t('gameover.toTitle');
     const m = Math.floor(stats.time / 60);
     const s = Math.floor(stats.time % 60);
     const dps = stats.time > 0 && stats.totalDamage
@@ -549,15 +550,18 @@ export class UI {
     document.getElementById('room-info')!.style.display = show ? 'block' : 'none';
     document.getElementById('kill-log')!.style.display = show ? 'block' : 'none';
     document.getElementById('ping-display')!.style.display = show ? 'block' : 'none';
-    document.getElementById('ping-hint')!.style.display = show ? 'block' : 'none';
+    const pingHint = document.getElementById('ping-hint')!;
+    pingHint.textContent = t('ping.hint');
+    pingHint.style.display = show ? 'block' : 'none';
     document.getElementById('chat-panel')!.style.display = show ? 'block' : 'none';
+    (document.getElementById('chat-input') as HTMLInputElement).placeholder = t('chat.placeholder');
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     document.getElementById('chat-toggle-btn')!.style.display =
       show && isTouchDevice ? 'flex' : 'none';
     document.getElementById('ping-btn')!.style.display =
       show && isTouchDevice ? 'flex' : 'none';
     if (isTouchDevice) {
-      document.getElementById('ping-hint')!.style.display = 'none';
+      pingHint.style.display = 'none';
     }
   }
 
@@ -652,13 +656,16 @@ export class UI {
 
   // ─── Respawn Overlay ─────────────────
   showRespawnOverlay(): void {
+    document.getElementById('death-title-text')!.textContent = t('respawn.eliminated');
     document.getElementById('death-penalty-text')!.textContent = t('death.penalty');
+    document.getElementById('death-hint-text')!.textContent = t('respawn.hint');
+    document.getElementById('quit-death-btn')!.textContent = t('gameover.toTitle');
     document.getElementById('respawn-overlay')!.style.display = 'flex';
   }
 
   updateRespawnTimer(remaining: number, total: number): void {
     const secs = Math.ceil(Math.max(0, remaining));
-    document.getElementById('respawn-timer-text')!.textContent = `Respawning in ${secs}...`;
+    document.getElementById('respawn-timer-text')!.textContent = t('respawn.timer', { secs });
     const pct = Math.max(0, Math.min(100, ((total - remaining) / total) * 100));
     document.getElementById('respawn-bar-fill')!.style.width = `${pct}%`;
   }

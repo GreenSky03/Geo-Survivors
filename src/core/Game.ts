@@ -154,6 +154,7 @@ export class Game {
   private bossKillsThisGame = 0;
   private evolutionsThisGame = 0;
   private baseMagnetRange = 100;
+  private basePlayerSpeed = 280;
 
   // Relic system (run-scoped)
   private relicSystem = new RelicSystem();
@@ -423,6 +424,19 @@ export class Game {
       this.ui.showCharacterSelect(this.meta);
     });
 
+    // Quit to title from death overlay (multiplayer)
+    document.getElementById('quit-death-btn')!.addEventListener('click', () => {
+      this.ui.hideRespawnOverlay();
+      this.respawnTimer = 0;
+      this.quitToTitle();
+    });
+
+    // Quit to title from game over screen (solo)
+    document.getElementById('gameover-quit-btn')!.addEventListener('click', () => {
+      this.ui.hideGameOver();
+      this.quitToTitle();
+    });
+
     // Spectate buttons
     document.getElementById('spectate-death-btn')!.addEventListener('click', () => {
       if (this.isMultiplayer && this.net.connected) {
@@ -609,10 +623,11 @@ export class Game {
       }
 
       // Remove stale enemies not present in server sync (missed enemy_death)
+      // Use 4s threshold to avoid false removals during network hiccups
       const now = Date.now();
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const e = this.enemies[i];
-        if (e.serverId >= 0 && !serverIds.has(e.serverId) && now - e.lastSyncTime > 2000) {
+        if (e.serverId >= 0 && !serverIds.has(e.serverId) && now - e.lastSyncTime > 4000) {
           this.world.removeChild(e.container);
           e.container.destroy();
           this.enemyById.delete(e.serverId);
@@ -1073,6 +1088,7 @@ export class Game {
     }
 
     this.baseMagnetRange = this.player.magnetRange;
+    this.basePlayerSpeed = this.player.speed;
 
     this.world.addChild(this.trail.container);
     this.world.addChild(this.player.container);
@@ -1436,6 +1452,9 @@ export class Game {
       this.ui.updateHp(this.player.hp, this.player.maxHp);
     }
 
+    // Apply relic speed multiplier (recalculate from base each frame)
+    this.player.speed = Math.floor(this.basePlayerSpeed * mults.speedMultiplier);
+
     // Update weapon multipliers from relics
     for (const weapon of this.weapons) {
       weapon.damageMultiplier = mults.damageMultiplier;
@@ -1761,6 +1780,14 @@ export class Game {
             else this.player.magnetRange += value;
           }
         }
+        // Re-apply relic effects after respawn (glass cannon maxHp, magnet, speed base)
+        this.baseMagnetRange = this.player.magnetRange;
+        this.basePlayerSpeed = this.player.speed;
+        const respawnMults = this.relicSystem.computeMultipliers();
+        if (respawnMults.maxHpMultiplier < 1) {
+          this.player.maxHp = Math.max(10, Math.floor(this.player.maxHp * respawnMults.maxHpMultiplier));
+        }
+        this.player.magnetRange = this.baseMagnetRange + respawnMults.magnetBonus;
         this.player.hp = this.player.maxHp;
 
         // Clean up XP orbs and pickups accumulated during death
