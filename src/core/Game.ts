@@ -948,7 +948,13 @@ export class Game {
       rp.destroy();
     }
     this.remotePlayers.clear();
+    // Cleanup enemies
+    for (const e of this.enemies) { this.world.removeChild(e.container); e.container.destroy({ children: true }); }
+    this.enemies = [];
     this.enemyById.clear();
+    // Cleanup weapons
+    for (const w of this.weapons) { this.world.removeChild(w.container); w.destroy(); }
+    this.weapons = [];
     // Cleanup boss projectiles and black holes
     for (const proj of this.bossProjectiles) proj.container.destroy();
     this.bossProjectiles = [];
@@ -1718,7 +1724,7 @@ export class Game {
         // Death penalty: full reset (weapons, level, XP, stats)
         for (const w of this.weapons) {
           this.world.removeChild(w.container);
-          w.container.destroy();
+          w.destroy();
         }
         this.weapons = [];
         const charDef = getCharacterById(this.selectedCharacterId);

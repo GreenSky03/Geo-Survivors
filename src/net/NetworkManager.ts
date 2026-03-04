@@ -233,6 +233,17 @@ export class NetworkManager {
     this.listeners.get(event)!.push(listener);
   }
 
+  off<K extends keyof NetEventMap>(event: K, listener: Listener<NetEventMap[K]>): void {
+    const list = this.listeners.get(event);
+    if (!list) return;
+    const idx = list.indexOf(listener);
+    if (idx !== -1) list.splice(idx, 1);
+  }
+
+  removeAllListeners(): void {
+    this.listeners.clear();
+  }
+
   private emit<K extends keyof NetEventMap>(event: K, data: NetEventMap[K]): void {
     const list = this.listeners.get(event);
     if (list) {
@@ -246,6 +257,9 @@ export class NetworkManager {
       this.reconnectTimer = null;
     }
     if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
       this.ws.onclose = null;
       this.ws.close();
       this.ws = null;

@@ -199,4 +199,9 @@ export class OrbitWeapon extends WeaponBase {
     }
     return hits;
   }
+
+  override destroy(): void {
+    this.orbHitCooldowns.clear();
+    super.destroy();
+  }
 }

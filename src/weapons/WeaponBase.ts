@@ -55,6 +55,11 @@ export abstract class WeaponBase {
     return Math.floor(baseDamage * this.damageMultiplier);
   }
 
+  /** Clean up all PixiJS resources */
+  destroy(): void {
+    this.container.destroy({ children: true });
+  }
+
   /** Override to apply evolution transformation */
   protected onEvolve(): void {}
 }

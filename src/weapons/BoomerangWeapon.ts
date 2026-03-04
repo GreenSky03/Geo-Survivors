@@ -292,4 +292,13 @@ export class BoomerangWeapon extends WeaponBase {
     }
     return hits;
   }
+
+  override destroy(): void {
+    for (const b of this.boomerangs) b.graphic.destroy();
+    for (const g of this.spiralGraphics) g.destroy();
+    this.boomerangs.length = 0;
+    this.spiralGraphics.length = 0;
+    this.spiralHitCooldowns.clear();
+    super.destroy();
+  }
 }

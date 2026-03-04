@@ -264,4 +264,12 @@ export class HomingMissileWeapon extends WeaponBase {
 
     return hits;
   }
+
+  override destroy(): void {
+    for (const m of this.missiles) m.graphic.destroy();
+    for (const g of this.trailGraphics) g.destroy();
+    this.missiles.length = 0;
+    this.trailGraphics.length = 0;
+    super.destroy();
+  }
 }

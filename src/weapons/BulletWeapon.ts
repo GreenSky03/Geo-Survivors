@@ -260,4 +260,12 @@ export class BulletWeapon extends WeaponBase {
     }
     return hits;
   }
+
+  override destroy(): void {
+    for (const b of this.bullets) b.graphic.destroy();
+    for (const b of this.beams) b.graphic.destroy();
+    this.bullets.length = 0;
+    this.beams.length = 0;
+    super.destroy();
+  }
 }

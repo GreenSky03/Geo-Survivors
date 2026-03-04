@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 import type {
   C2S_Message, S2C_Message, S2C_Welcome, PlayerData, BossData,
   Team, ServerEnemy, S2C_PlayersSync, S2C_EnemiesSync,
@@ -129,6 +130,16 @@ interface ServerBlackHole {
   dead: boolean;
 }
 
+interface ServerBossProjectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  life: number;
+  hitPlayers: Set<string>;
+}
+
 interface Room {
   code: string;
   players: Map<string, ServerPlayer>;
@@ -157,6 +168,8 @@ interface Room {
   blackHoles: Map<number, ServerBlackHole>;
   nextBlackHoleId: number;
   nextBlackHoleTime: number;
+  // Boss projectiles (server-tracked for damage)
+  bossProjectiles: ServerBossProjectile[];
 }
 
 // ─── Party System ─────────────────────────
@@ -255,6 +268,7 @@ function findOrCreateRoom(preferCode?: string): Room {
     blackHoles: new Map(),
     nextBlackHoleId: 1,
     nextBlackHoleTime: 90,
+    bossProjectiles: [],
   };
   rooms.set(code, room);
   console.log(`Room created: ${code}`);
@@ -962,11 +976,17 @@ function executeBossAttack(room: Room, boss: RoomEnemy, targetX: number, targetY
     }
   }
 
-  // Server-side projectile collision (simplified: immediate check at spawn)
-  // For radial_burst/aimed_shot, damage is done client-side in solo, server sends pvp_damage in multi
+  // Track projectiles server-side for player damage
   if (attackType !== 'charge_slam') {
-    // Schedule delayed damage checks — for simplicity, we do proximity checks on next few ticks
-    // The client handles visual projectiles; server just sends the event
+    for (const p of msg.projectiles) {
+      room.bossProjectiles.push({
+        x: boss.x, y: boss.y,
+        vx: p.vx, vy: p.vy,
+        damage: p.damage,
+        life: p.lifetime,
+        hitPlayers: new Set(),
+      });
+    }
   }
 
   broadcast(room, msg);
@@ -1183,6 +1203,21 @@ const server = http.createServer((req, res) => {
 
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+  const compressible = ['.html', '.js', '.css', '.json', '.svg', '.txt'].includes(ext);
+  const acceptGzip = (req.headers['accept-encoding'] || '').includes('gzip');
+
+  const sendCompressed = (data: Buffer, ct: string) => {
+    if (compressible && acceptGzip && data.length > 1024) {
+      zlib.gzip(data, (err, compressed) => {
+        if (err) { res.writeHead(200, { 'Content-Type': ct }); res.end(data); return; }
+        res.writeHead(200, { 'Content-Type': ct, 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' });
+        res.end(compressed);
+      });
+    } else {
+      res.writeHead(200, { 'Content-Type': ct });
+      res.end(data);
+    }
+  };
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
@@ -1190,8 +1225,7 @@ const server = http.createServer((req, res) => {
       if (err.code === 'ENOENT' && !ext) {
         fs.readFile(path.join(DIST_DIR, 'index.html'), (err2, data2) => {
           if (err2) { res.writeHead(404); res.end('Not Found'); return; }
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(data2);
+          sendCompressed(data2, 'text/html');
         });
         return;
       }
@@ -1199,8 +1233,7 @@ const server = http.createServer((req, res) => {
       res.end('Not Found');
       return;
     }
-    res.writeHead(200, { 'Content-Type': contentType });
-    res.end(data);
+    sendCompressed(data, contentType);
   });
 });
 
@@ -1692,6 +1725,30 @@ setInterval(() => {
 
     // Update black holes
     updateBlackHoles(room);
+
+    // Update boss projectiles (server-side damage to players)
+    for (let i = room.bossProjectiles.length - 1; i >= 0; i--) {
+      const proj = room.bossProjectiles[i];
+      proj.x += proj.vx * TICK_S;
+      proj.y += proj.vy * TICK_S;
+      proj.life -= TICK_S;
+      if (proj.life <= 0) { room.bossProjectiles.splice(i, 1); continue; }
+      // Check collision with players
+      for (const [pid, p] of room.players) {
+        if (!p.data.alive || proj.hitPlayers.has(pid)) continue;
+        const dx = p.data.x - proj.x;
+        const dy = p.data.y - proj.y;
+        if (dx * dx + dy * dy < 20 * 20) {
+          proj.hitPlayers.add(pid);
+          send(p.ws, {
+            type: 'pvp_damage',
+            fromId: 'boss_proj',
+            fromTeam: 'red',
+            damage: proj.damage,
+          } as S2C_PvpDamage);
+        }
+      }
+    }
 
     // Broadcast player positions
     room.playerSyncAccum += TICK_MS;

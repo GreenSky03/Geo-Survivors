@@ -209,4 +209,11 @@ export class ChainLightning extends WeaponBase {
     this.pendingHits.length = 0;
     return hits;
   }
+
+  override destroy(): void {
+    this.boltGraphics.destroy();
+    this.bolts.length = 0;
+    this.pendingHits.length = 0;
+    super.destroy();
+  }
 }
