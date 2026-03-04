@@ -20,10 +20,10 @@ import { TEAMS, MAP_HALF_W, MAP_HALF_H } from '../shared/protocol';
 const PORT = Number(process.env.PORT) || 8080;
 const MAX_PLAYERS_PER_ROOM = 30;
 const BOSS_INTERVAL_S = 120;
-const TICK_MS = 50;
+const TICK_MS = 33;           // 30Hz server tick
 const TICK_S = TICK_MS / 1000;
-const PLAYER_SYNC_MS = 50;   // every tick — minimize perceived latency
-const ENEMY_SYNC_MS = 50;    // every tick — minimize HP/death update delay
+const PLAYER_SYNC_MS = 33;   // every tick
+const ENEMY_SYNC_MS = 33;    // every tick
 const SCOREBOARD_MS = 2000;
 const MAX_ENEMIES = 120;
 
