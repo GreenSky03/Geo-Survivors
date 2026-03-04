@@ -50,6 +50,11 @@ export abstract class WeaponBase {
     }
   }
 
+  /** Apply damageMultiplier to base damage */
+  protected scaledDamage(baseDamage: number): number {
+    return Math.floor(baseDamage * this.damageMultiplier);
+  }
+
   /** Override to apply evolution transformation */
   protected onEvolve(): void {}
 }

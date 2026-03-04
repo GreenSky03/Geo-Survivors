@@ -82,7 +82,7 @@ export class Player {
       let diff = targetRot - this.container.rotation;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
-      this.container.rotation += diff * 0.12;
+      this.container.rotation += diff * (1 - Math.pow(1 - 0.12, dt * 60));
     }
 
     // HP regen

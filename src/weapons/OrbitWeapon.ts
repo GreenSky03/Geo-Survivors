@@ -191,7 +191,7 @@ export class OrbitWeapon extends WeaponBase {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < d.orbSize + enemy.radius) {
           const fromAngle = Math.atan2(orb.y - enemy.y, orb.x - enemy.x);
-          enemy.takeDamage(d.damage, fromAngle);
+          enemy.takeDamage(this.scaledDamage(d.damage), fromAngle);
           this.orbHitCooldowns.set(enemy, this.evolved ? 0.15 : 0.3);
           hits.push(enemy);
         }

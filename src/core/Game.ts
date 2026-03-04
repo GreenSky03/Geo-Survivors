@@ -153,6 +153,7 @@ export class Game {
   private selectedCharacterId = 'warrior';
   private bossKillsThisGame = 0;
   private evolutionsThisGame = 0;
+  private baseMagnetRange = 100;
 
   // Relic system (run-scoped)
   private relicSystem = new RelicSystem();
@@ -588,10 +589,9 @@ export class Game {
           enemy.serverVy = vy;
           enemy.lastSyncTime = Date.now();
 
-          // Elite visual scaling
+          // Elite visual scaling (radius already set in createServerEnemy)
           if (isElite && enemy.container.scale.x < 1.5) {
             enemy.container.scale.set(1.5);
-            enemy.radius = Math.floor(enemy.radius * 1.5);
           }
 
           // Server slow visual: override speed to trigger blue tint in update
@@ -1066,6 +1066,8 @@ export class Game {
       });
     }
 
+    this.baseMagnetRange = this.player.magnetRange;
+
     this.world.addChild(this.trail.container);
     this.world.addChild(this.player.container);
 
@@ -1437,7 +1439,7 @@ export class Game {
 
     // Last Stand check
     const lastStandActive = mults.lastStandDamageBonus > 0 && this.player.hp <= this.player.maxHp * 0.3;
-    const finalDamageMultiplier = mults.damageMultiplier * (lastStandActive ? (1 + mults.lastStandDamageBonus) : 1);
+    const finalDamageMultiplier = mults.damageMultiplier * (lastStandActive ? (1 + mults.lastStandDamageBonus) : 1) * this.teamBuffMultiplier;
 
     // ─── Weapons ─────────────────────────────
     const playerAlive = this.player.alive;
@@ -1666,10 +1668,7 @@ export class Game {
         this.sound.stopBGM();
 
         // Process meta progression
-        const coinsEarned = this.meta.calculateCoins(
-          this.kills, this.gameTime, this.level, this.bossKillsThisGame,
-        );
-        this.processEndOfGame();
+        const coinsEarned = this.processEndOfGame();
 
         // Record run history
         const today = new Date();
@@ -1736,11 +1735,26 @@ export class Game {
         this.ui.updateWeaponHud(this.weapons);
         this.lastWeaponSync = '';
 
-        // Reset player stats to defaults
+        // Reset player stats to defaults then re-apply meta/character bonuses
         this.player.maxHp = 100;
         this.player.speed = 280;
         this.player.magnetRange = 100;
         this.player.hpRegen = 0;
+        this.meta.applyToPlayer(this.player);
+        const respawnCharDef = getCharacterById(this.selectedCharacterId);
+        if (respawnCharDef) {
+          const { stat, value, mode } = respawnCharDef.passiveBonus;
+          if (stat === 'maxHp') {
+            if (mode === 'multiply') this.player.maxHp = Math.floor(this.player.maxHp * value);
+            else this.player.maxHp += value;
+          } else if (stat === 'speed') {
+            if (mode === 'multiply') this.player.speed = Math.floor(this.player.speed * value);
+            else this.player.speed += value;
+          } else if (stat === 'magnetRange') {
+            if (mode === 'multiply') this.player.magnetRange = Math.floor(this.player.magnetRange * value);
+            else this.player.magnetRange += value;
+          }
+        }
         this.player.hp = this.player.maxHp;
 
         // Clean up XP orbs and pickups accumulated during death
@@ -1921,8 +1935,8 @@ export class Game {
             this.player.hp = Math.min(this.player.hp, this.player.maxHp);
           }
         }
-        // Magnet bonus
-        this.player.magnetRange += rm.magnetBonus;
+        // Magnet bonus: set absolute value (baseMagnet + totalBonus) to avoid cumulative stacking
+        this.player.magnetRange = this.baseMagnetRange + rm.magnetBonus;
         // Speed bonus is multiplicative — handled via update since relics may stack
       }
       this.ui.updateHp(this.player.hp, this.player.maxHp);
@@ -2151,8 +2165,8 @@ export class Game {
     }
   }
 
-  /** Called at end of game to process meta coins & achievements */
-  private processEndOfGame(): void {
+  /** Called at end of game to process meta coins & achievements. Returns coins earned. */
+  private processEndOfGame(): number {
     // Calculate coins (with relic coin multiplier)
     const relicMults = this.relicSystem.computeMultipliers();
     const baseCoins = this.meta.calculateCoins(
@@ -2195,7 +2209,7 @@ export class Game {
 
     this.ui.updateTitleCoins(this.meta.coins);
 
-    // coinsEarned already used above
+    return coinsEarned;
   }
 
   /** Solo: mini-boss & event wave system */

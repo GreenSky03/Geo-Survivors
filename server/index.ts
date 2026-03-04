@@ -487,10 +487,14 @@ function spawnMiniBoss(room: Room): void {
   const centroid = getPlayerCentroid(room);
   if (!centroid) return;
 
-  const types = ['charger', 'pentagon', 'shield'];
-  const typeKey = types[Math.floor(Math.random() * types.length)];
-  const bossTypes = ['charger_elite', 'splitter_king', 'shield_bearer'];
-  const bossType = bossTypes[Math.floor(Math.random() * bossTypes.length)];
+  const miniBossDefs = [
+    { type: 'charger', bossType: 'charger_elite' },
+    { type: 'pentagon', bossType: 'splitter_king' },
+    { type: 'shield', bossType: 'shield_bearer' },
+  ];
+  const chosen = miniBossDefs[Math.floor(Math.random() * miniBossDefs.length)];
+  const typeKey = chosen.type;
+  const bossType = chosen.bossType;
 
   const angle = Math.random() * Math.PI * 2;
   const bx = centroid.x + Math.cos(angle) * 400;
@@ -1157,8 +1161,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+
   // Static file serving (dist/)
-  let filePath = path.join(DIST_DIR, req.url === '/' ? 'index.html' : req.url!);
+  let urlPath = req.url || '/';
+  // Strip query string
+  const qIdx = urlPath.indexOf('?');
+  if (qIdx !== -1) urlPath = urlPath.slice(0, qIdx);
+  // Decode and resolve to prevent path traversal (%2e%2e etc)
+  try { urlPath = decodeURIComponent(urlPath); } catch { res.writeHead(400); res.end(); return; }
+
+  const filePath = path.resolve(DIST_DIR, '.' + path.normalize(urlPath === '/' ? '/index.html' : urlPath));
   // Prevent directory traversal
   if (!filePath.startsWith(DIST_DIR)) {
     res.writeHead(403);
@@ -1189,7 +1204,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
 wss.on('error', (err) => { console.error('WSS error:', err.message); });
 server.listen(PORT, () => {
   console.log(`Geo Survivors server running on http://localhost:${PORT} (ws: /ws)`);
@@ -1198,14 +1213,27 @@ server.listen(PORT, () => {
 wss.on('connection', (ws: WebSocket) => {
   let playerId = '';
   let playerRoom: Room | null = null;
+  // Rate limiting: max 100 messages per second per client
+  let msgCount = 0;
+  let msgResetTime = Date.now();
   console.log('New WebSocket connection');
 
   ws.on('message', (raw: Buffer) => {
+    // Rate limit check
+    const now = Date.now();
+    if (now - msgResetTime > 1000) { msgCount = 0; msgResetTime = now; }
+    if (++msgCount > 100) return;
+
     let msg: C2S_Message;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
     try { switch (msg.type) {
       case 'join': {
+        // Prevent duplicate joins: clean up previous session
+        if (playerId && playerRoom) {
+          playerRoom.players.delete(playerId);
+          broadcast(playerRoom, { type: 'player_leave', id: playerId });
+        }
         playerId = generateId();
         // Check if player is in a party and should be assigned to a specific room/team
         let partyTeam: Team | null = null;
@@ -1224,7 +1252,7 @@ wss.on('connection', (ws: WebSocket) => {
 
         const playerData: PlayerData = {
           id: playerId,
-          name: msg.name || `Player_${playerId.slice(0, 4)}`,
+          name: (typeof msg.name === 'string' ? msg.name.slice(0, 20).replace(/[<>&"']/g, '') : '') || `Player_${playerId.slice(0, 4)}`,
           team,
           x: 0, y: 0, level: 1, kills: 0,
           hp: 100, maxHp: 100, rotation: 0, alive: true,
@@ -1257,13 +1285,14 @@ wss.on('connection', (ws: WebSocket) => {
         const clamped = clampToMap(msg.x, msg.y);
         sp.data.x = clamped.x;
         sp.data.y = clamped.y;
-        sp.data.level = msg.level;
-        sp.data.kills = msg.kills;
-        sp.data.hp = msg.hp;
-        sp.data.maxHp = msg.maxHp;
-        sp.data.rotation = msg.rotation;
-        sp.data.alive = msg.hp > 0;
-        if (msg.weapons) {
+        // Validate and clamp incoming stats
+        sp.data.level = Math.max(1, Math.min(Math.floor(msg.level || 1), 100));
+        sp.data.kills = Math.max(0, Math.min(Math.floor(msg.kills || 0), 99999));
+        sp.data.maxHp = Math.max(50, Math.min(Math.floor(msg.maxHp || 100), 2000));
+        sp.data.hp = Math.max(0, Math.min(Math.floor(msg.hp || 0), sp.data.maxHp));
+        sp.data.rotation = typeof msg.rotation === 'number' && isFinite(msg.rotation) ? msg.rotation : 0;
+        sp.data.alive = sp.data.hp > 0;
+        if (msg.weapons && Array.isArray(msg.weapons) && msg.weapons.length <= 8) {
           sp.data.weapons = msg.weapons;
         }
         sp.lastUpdate = Date.now();
@@ -1393,10 +1422,11 @@ wss.on('connection', (ws: WebSocket) => {
         if (!playerRoom) return;
         const sp = playerRoom.players.get(playerId);
         if (!sp) return;
+        const pingPos = clampToMap(msg.x, msg.y);
         const pingMsg: S2C_PingSignal = {
           type: 'ping_signal',
-          x: msg.x,
-          y: msg.y,
+          x: pingPos.x,
+          y: pingPos.y,
           team: sp.data.team,
           playerName: sp.data.name,
         };
@@ -1406,14 +1436,18 @@ wss.on('connection', (ws: WebSocket) => {
 
       case 'pull_request': {
         if (!playerRoom) return;
+        // Validate pull parameters
+        const pullRadius = Math.min(Math.max(msg.radius || 0, 0), 300);
+        const pullStrength = Math.min(Math.max(msg.strength || 0, 0), 500);
+        const pullPos = clampToMap(msg.x, msg.y);
         // Apply pull force to enemies near the specified position
         for (const enemy of playerRoom.enemies.values()) {
           if (enemy.dead) continue;
-          const edx = msg.x - enemy.x;
-          const edy = msg.y - enemy.y;
+          const edx = pullPos.x - enemy.x;
+          const edy = pullPos.y - enemy.y;
           const eDist = Math.sqrt(edx * edx + edy * edy);
-          if (eDist < msg.radius && eDist > 30) {
-            const pullForce = msg.strength * TICK_S;
+          if (eDist < pullRadius && eDist > 30) {
+            const pullForce = pullStrength * TICK_S;
             enemy.x += (edx / eDist) * pullForce;
             enemy.y += (edy / eDist) * pullForce;
           }
@@ -1643,15 +1677,8 @@ setInterval(() => {
         const endMsg: S2C_EventWaveEnd = { type: 'event_wave_end', event: room.activeEvent.type };
         broadcast(room, endMsg);
         room.activeEvent = null;
-      } else if (room.activeEvent.type === 'healing_rain') {
-        // Heal all alive players by 3 HP/s (applied per tick)
-        const healPerTick = Math.ceil(3 * TICK_S);
-        for (const sp of room.players.values()) {
-          if (sp.data.alive && sp.data.hp < sp.data.maxHp) {
-            sp.data.hp = Math.min(sp.data.maxHp, sp.data.hp + healPerTick);
-          }
-        }
       }
+      // healing_rain: handled client-side (server hp gets overwritten by client state messages)
     }
 
     // Update enemy positions

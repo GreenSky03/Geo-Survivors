@@ -236,7 +236,7 @@ export class HomingMissileWeapon extends WeaponBase {
         const dist = distance(m.x, m.y, enemy.x, enemy.y);
         if (dist < 8 + enemy.radius) {
           const fromAngle = Math.atan2(m.y - enemy.y, m.x - enemy.x);
-          enemy.takeDamage(d.damage, fromAngle);
+          enemy.takeDamage(this.scaledDamage(d.damage), fromAngle);
           m.hitSet.add(enemy);
           hits.push(enemy);
 

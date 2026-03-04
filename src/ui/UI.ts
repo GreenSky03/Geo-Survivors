@@ -6,6 +6,10 @@ import { MetaProgression, META_UPGRADES } from '../systems/MetaProgression';
 import { CHARACTERS, CharacterDef } from '../systems/CharacterSystem';
 import { ACHIEVEMENTS, AchievementDef, getDailyChallenges, DailyChallengeDef, getTodayDateStr } from '../systems/AchievementSystem';
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export class UI {
   private hpFill: HTMLElement;
   private xpFill: HTMLElement;
@@ -568,7 +572,7 @@ export class UI {
     const teamColors: Record<string, string> = { blue: '#4488ff', red: '#ff4466', green: '#44ff88', yellow: '#ffcc44' };
     const entry = document.createElement('div');
     entry.className = 'kill-log-entry';
-    entry.innerHTML = `<span style="color:${teamColors[killerTeam] || '#fff'}">${killerName}</span> killed ${victimName}`;
+    entry.innerHTML = `<span style="color:${teamColors[killerTeam] || '#fff'}">${escapeHtml(killerName)}</span> killed ${escapeHtml(victimName)}`;
     el.appendChild(entry);
     while (el.children.length > 5) {
       el.removeChild(el.children[0]);
@@ -702,8 +706,7 @@ export class UI {
     const teamColors: Record<string, string> = { blue: '#4488ff', red: '#ff4466', green: '#44ff88', yellow: '#ffcc44' };
     const el = document.createElement('div');
     el.className = 'chat-msg';
-    const safe = msg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    el.innerHTML = `<span style="color:${teamColors[team] || '#fff'}">${name.replace(/</g, '&lt;')}</span>: ${safe}`;
+    el.innerHTML = `<span style="color:${teamColors[team] || '#fff'}">${escapeHtml(name)}</span>: ${escapeHtml(msg)}`;
     container.appendChild(el);
 
     while (container.children.length > 10) {
@@ -966,7 +969,7 @@ export class UI {
 
   updatePartyMembers(members: string[]): void {
     const el = document.getElementById('party-members-list')!;
-    el.innerHTML = `<strong>${t('party.members')}:</strong><br>` + members.map(m => `• ${m}`).join('<br>');
+    el.innerHTML = `<strong>${t('party.members')}:</strong><br>` + members.map(m => `• ${escapeHtml(m)}`).join('<br>');
     el.style.display = 'block';
   }
 

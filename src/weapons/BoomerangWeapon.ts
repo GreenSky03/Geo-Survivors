@@ -62,6 +62,7 @@ export class BoomerangWeapon extends WeaponBase {
   private spiralAngles: number[] = [];
   private spiralGraphics: Graphics[] = [];
   private spiralTime = 0;
+  private spiralHitCooldowns: Map<Enemy, number> = new Map();
 
   get info(): WeaponInfo {
     return {
@@ -200,6 +201,13 @@ export class BoomerangWeapon extends WeaponBase {
     const d = this.data;
     this.spiralTime += dt;
 
+    // Tick down spiral hit cooldowns
+    for (const [enemy, cd] of this.spiralHitCooldowns) {
+      const remaining = cd - dt;
+      if (remaining <= 0 || enemy.dead) this.spiralHitCooldowns.delete(enemy);
+      else this.spiralHitCooldowns.set(enemy, remaining);
+    }
+
     // Spiral outward and inward
     const spiralSpeed = 4; // rotations per second
     const maxRadius = d.range;
@@ -254,14 +262,15 @@ export class BoomerangWeapon extends WeaponBase {
     const hits: Enemy[] = [];
 
     if (this.evolved) {
-      // Spiral hits
+      // Spiral hits (with cooldown per enemy to prevent infinite DPS)
       for (const g of this.spiralGraphics) {
         for (const enemy of enemies) {
-          if (enemy.dead) continue;
+          if (enemy.dead || this.spiralHitCooldowns.has(enemy)) continue;
           const dist = distance(g.x, g.y, enemy.x, enemy.y);
           if (dist < 12 + enemy.radius) {
             const fromAngle = Math.atan2(g.y - enemy.y, g.x - enemy.x);
-            enemy.takeDamage(d.damage, fromAngle);
+            enemy.takeDamage(this.scaledDamage(d.damage), fromAngle);
+            this.spiralHitCooldowns.set(enemy, 0.25);
             hits.push(enemy);
           }
         }
@@ -275,7 +284,7 @@ export class BoomerangWeapon extends WeaponBase {
         const dist = distance(b.x, b.y, enemy.x, enemy.y);
         if (dist < 10 + enemy.radius) {
           const fromAngle = Math.atan2(b.y - enemy.y, b.x - enemy.x);
-          enemy.takeDamage(d.damage, fromAngle);
+          enemy.takeDamage(this.scaledDamage(d.damage), fromAngle);
           b.hitSet.add(enemy);
           hits.push(enemy);
         }

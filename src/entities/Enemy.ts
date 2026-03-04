@@ -236,7 +236,7 @@ export class Enemy {
     if (this.enemyType === 'phaser') {
       if (this.phaserState === 'telegraph') {
         this.container.alpha = 0.4;
-        this.container.scale.set(this.container.scale.x * 0.98);
+        this.container.scale.set(this.container.scale.x * Math.pow(0.98, dt * 60));
       } else if (this.phaserState === 'invisible') {
         this.container.alpha = 0.05;
       } else {
@@ -250,8 +250,9 @@ export class Enemy {
     if (this.isCharging) {
       this.x += this.chargeVx * dt;
       this.y += this.chargeVy * dt;
-      this.chargeVx *= 0.97;
-      this.chargeVy *= 0.97;
+      const friction = Math.pow(0.97, dt * 60);
+      this.chargeVx *= friction;
+      this.chargeVy *= friction;
       if (Math.abs(this.chargeVx) < 20) this.isCharging = false;
     } else if (this.chargeTimer <= 0 && dist < 350) {
       this.chargeTimer = 2.5 + Math.random();
@@ -273,11 +274,11 @@ export class Enemy {
       // Perpendicular offset for zigzag
       const perpX = -Math.sin(moveAngle);
       const perpY = Math.cos(moveAngle);
-      const sinOffset = Math.sin(this.zigzagPhase) * 80; // 80px amplitude
+      const sinOffset = Math.cos(this.zigzagPhase) * 5 * 80; // derivative of sin * amplitude * freq
       const forwardX = (dx / dist) * this.speed;
       const forwardY = (dy / dist) * this.speed;
-      this.x += (forwardX + perpX * sinOffset * 3) * dt;
-      this.y += (forwardY + perpY * sinOffset * 3) * dt;
+      this.x += (forwardX + perpX * sinOffset) * dt;
+      this.y += (forwardY + perpY * sinOffset) * dt;
     }
   }
 

@@ -176,7 +176,7 @@ export class AreaWeapon extends WeaponBase {
           if (enemy.dead) continue;
           if (distance(px, py, enemy.x, enemy.y) < d.radius * this.areaMultiplier) {
             const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
-            enemy.takeDamage(d.damage, fromAngle);
+            enemy.takeDamage(this.scaledDamage(d.damage), fromAngle);
             hits.push(enemy);
           }
         }
@@ -192,7 +192,7 @@ export class AreaWeapon extends WeaponBase {
         if (enemy.dead) continue;
         if (distance(px, py, enemy.x, enemy.y) < d.radius * this.areaMultiplier) {
           const fromAngle = Math.atan2(py - enemy.y, px - enemy.x);
-          enemy.takeDamage(d.damage, fromAngle);
+          enemy.takeDamage(this.scaledDamage(d.damage), fromAngle);
           hits.push(enemy);
         }
       }

@@ -167,15 +167,16 @@ export class RemotePlayer {
   }
 
   update(dt: number): void {
-    // Interpolate position
-    this.container.x = lerp(this.container.x, this.targetX, 0.15);
-    this.container.y = lerp(this.container.y, this.targetY, 0.15);
+    // Interpolate position (dt-independent)
+    const lerpFactor = 1 - Math.pow(1 - 0.15, dt * 60);
+    this.container.x = lerp(this.container.x, this.targetX, lerpFactor);
+    this.container.y = lerp(this.container.y, this.targetY, lerpFactor);
 
-    // Interpolate rotation
+    // Interpolate rotation (dt-independent)
     let diff = this.targetRotation - this.container.rotation;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    this.container.rotation += diff * 0.15;
+    this.container.rotation += diff * lerpFactor;
 
     // Cancel container rotation on weapon visuals (they should render in world space)
     this.weaponVisuals.rotation = -this.container.rotation;
