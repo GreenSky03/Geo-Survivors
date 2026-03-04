@@ -180,8 +180,8 @@ export class NetworkManager {
     }
   }
 
-  sendState(x: number, y: number, level: number, kills: number, hp: number, maxHp: number, rotation: number, weapons?: WeaponSyncData[]): void {
-    this.send({ type: 'state', x, y, level, kills, hp, maxHp, rotation, weapons });
+  sendState(x: number, y: number, level: number, kills: number, hp: number, maxHp: number, rotation: number, weapons?: WeaponSyncData[], relicCount?: number): void {
+    this.send({ type: 'state', x, y, level, kills, hp, maxHp, rotation, weapons, relicCount });
   }
 
   sendEnemyHit(enemyId: number, damage: number): void {

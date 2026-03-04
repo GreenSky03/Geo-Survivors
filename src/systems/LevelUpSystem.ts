@@ -120,18 +120,11 @@ export class LevelUpSystem {
       apply: () => { player.hpRegen += 1.5; },
     });
 
-    // Relic choices (one random available relic per level-up pool)
-    if (relicSystem) {
+    // Relic choices — rare: 25% chance to include 1 relic in the pool
+    if (relicSystem && Math.random() < 0.25) {
       const availableRelics = RELIC_DEFS.filter(r => relicSystem.canAcquire(r.id));
-      // Shuffle available relics
-      for (let i = availableRelics.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [availableRelics[i], availableRelics[j]] = [availableRelics[j], availableRelics[i]];
-      }
-      // Add up to 2 relics to the pool
-      const relicCount = Math.min(2, availableRelics.length);
-      for (let i = 0; i < relicCount; i++) {
-        const rdef = availableRelics[i];
+      if (availableRelics.length > 0) {
+        const rdef = availableRelics[Math.floor(Math.random() * availableRelics.length)];
         const curCount = relicSystem.getCount(rdef.id);
         pool.push({
           id: `relic_${rdef.id}`,

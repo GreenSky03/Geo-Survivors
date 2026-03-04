@@ -1204,10 +1204,12 @@ export class Game {
         const sendWeapons = weaponStr !== this.lastWeaponSync;
         if (sendWeapons) this.lastWeaponSync = weaponStr;
 
+        const relicCount = this.relicSystem.getOwnedRelics().reduce((sum, r) => sum + r.count, 0);
         this.net.sendState(
           this.player.x, this.player.y, this.level, this.kills,
           this.player.hp, this.player.maxHp, this.player.container.rotation,
           sendWeapons ? weaponData : undefined,
+          relicCount,
         );
       }
 

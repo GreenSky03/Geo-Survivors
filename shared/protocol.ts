@@ -61,6 +61,7 @@ export interface C2S_State {
   maxHp: number;
   rotation: number;
   weapons?: WeaponSyncData[];
+  relicCount?: number;
 }
 
 export interface C2S_EnemyHit {
@@ -108,6 +109,7 @@ export interface PlayerData {
   rotation: number;
   alive: boolean;
   weapons?: WeaponSyncData[];
+  relicCount?: number;
 }
 
 export interface BossData {

@@ -221,30 +221,41 @@ function clampToMap(x: number, y: number): { x: number; y: number } {
   };
 }
 
-// ─── Dynamic difficulty: time + average alive player level, scaled by alive ratio ───
+// ─── Dynamic difficulty: player-driven with light time scaling ───
+// Primary factors: alive player count, avg level, relics
+// Secondary factor: time (gentle scaling, not dominant)
 function getRoomDifficulty(room: Room): number {
   const mins = room.serverTime / 60;
-  const timeComponent = 1 + mins * 0.2 + Math.pow(mins / 15, 1.3);
+  // Gentle time ramp: starts at 1.0, reaches ~2.0 at 10min, ~3.0 at 20min
+  const timeComponent = 1 + mins * 0.1 + Math.pow(mins / 20, 1.2);
 
   const allPlayers = Array.from(room.players.values());
   const alivePlayers = allPlayers.filter(p => p.data.alive);
-  const totalPlayers = allPlayers.length;
+  const aliveCount = alivePlayers.length;
 
-  // Use alive players' avg level (dead players excluded from difficulty calc)
+  // Level component: avg alive level with stronger weight
   let avgLevel = 1;
-  if (alivePlayers.length > 0) {
+  if (aliveCount > 0) {
     let totalLevel = 0;
     for (const p of alivePlayers) totalLevel += p.data.level;
-    avgLevel = totalLevel / alivePlayers.length;
+    avgLevel = totalLevel / aliveCount;
   }
-  const levelComponent = avgLevel * 0.25;
+  const levelComponent = avgLevel * 0.4;
 
-  // Scale difficulty by alive player ratio (fewer alive → lower difficulty)
-  // When all alive: 1.0, half alive: 0.6, none alive: 0.2
-  const aliveRatio = totalPlayers > 0 ? alivePlayers.length / totalPlayers : 1;
-  const aliveScale = 0.2 + 0.8 * aliveRatio;
+  // Player count component: more alive players = harder
+  const playerComponent = aliveCount * 0.3;
 
-  return (timeComponent + levelComponent) * aliveScale;
+  // Relic component: total relic stacks across alive players increase difficulty
+  let totalRelics = 0;
+  for (const p of alivePlayers) totalRelics += (p.data.relicCount || 0);
+  const relicComponent = totalRelics * 0.15;
+
+  // Alive ratio scaling: when players die, difficulty drops significantly
+  const totalPlayers = allPlayers.length;
+  const aliveRatio = totalPlayers > 0 ? aliveCount / totalPlayers : 1;
+  const aliveScale = 0.15 + 0.85 * aliveRatio; // 0 alive → 0.15, all alive → 1.0
+
+  return (timeComponent + levelComponent + playerComponent + relicComponent) * aliveScale;
 }
 
 function findOrCreateRoom(preferCode?: string): Room {
@@ -1302,7 +1313,7 @@ wss.on('connection', (ws: WebSocket) => {
           team,
           x: 0, y: 0, level: 1, kills: 0,
           hp: 100, maxHp: 100, rotation: 0, alive: true,
-          weapons: [],
+          weapons: [], relicCount: 0,
         };
 
         room.players.set(playerId, { ws, data: playerData, lastUpdate: Date.now() });
@@ -1338,6 +1349,7 @@ wss.on('connection', (ws: WebSocket) => {
         sp.data.hp = Math.max(0, Math.min(Math.floor(msg.hp || 0), sp.data.maxHp));
         sp.data.rotation = typeof msg.rotation === 'number' && isFinite(msg.rotation) ? msg.rotation : 0;
         sp.data.alive = sp.data.hp > 0;
+        sp.data.relicCount = Math.max(0, Math.min(Math.floor(msg.relicCount || 0), 50));
         if (msg.weapons && Array.isArray(msg.weapons) && msg.weapons.length <= 8) {
           sp.data.weapons = msg.weapons;
         }
