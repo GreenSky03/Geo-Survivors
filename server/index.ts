@@ -22,8 +22,8 @@ const MAX_PLAYERS_PER_ROOM = 30;
 const BOSS_INTERVAL_S = 120;
 const TICK_MS = 50;
 const TICK_S = TICK_MS / 1000;
-const PLAYER_SYNC_MS = 100;
-const ENEMY_SYNC_MS = 100;
+const PLAYER_SYNC_MS = 50;   // every tick — minimize perceived latency
+const ENEMY_SYNC_MS = 50;    // every tick — minimize HP/death update delay
 const SCOREBOARD_MS = 2000;
 const MAX_ENEMIES = 120;
 
@@ -221,19 +221,17 @@ function clampToMap(x: number, y: number): { x: number; y: number } {
   };
 }
 
-// ─── Dynamic difficulty: player-driven with light time scaling ───
-// Primary factors: alive player count, avg level, relics
-// Secondary factor: time (gentle scaling, not dominant)
+// ─── Dynamic difficulty: purely player-driven (no time component) ───
+// Factors: alive player count, avg level, relics, alive ratio
 function getRoomDifficulty(room: Room): number {
-  const mins = room.serverTime / 60;
-  // Gentle time ramp: starts at 1.0, reaches ~2.0 at 10min, ~3.0 at 20min
-  const timeComponent = 1 + mins * 0.1 + Math.pow(mins / 20, 1.2);
-
   const allPlayers = Array.from(room.players.values());
   const alivePlayers = allPlayers.filter(p => p.data.alive);
   const aliveCount = alivePlayers.length;
 
-  // Level component: avg alive level with stronger weight
+  // Base difficulty: always at least 1.0
+  const base = 1;
+
+  // Level component: avg alive level
   let avgLevel = 1;
   if (aliveCount > 0) {
     let totalLevel = 0;
@@ -245,7 +243,7 @@ function getRoomDifficulty(room: Room): number {
   // Player count component: more alive players = harder
   const playerComponent = aliveCount * 0.3;
 
-  // Relic component: total relic stacks across alive players increase difficulty
+  // Relic component: total relic stacks across alive players
   let totalRelics = 0;
   for (const p of alivePlayers) totalRelics += (p.data.relicCount || 0);
   const relicComponent = totalRelics * 0.15;
@@ -253,9 +251,9 @@ function getRoomDifficulty(room: Room): number {
   // Alive ratio scaling: when players die, difficulty drops significantly
   const totalPlayers = allPlayers.length;
   const aliveRatio = totalPlayers > 0 ? aliveCount / totalPlayers : 1;
-  const aliveScale = 0.15 + 0.85 * aliveRatio; // 0 alive → 0.15, all alive → 1.0
+  const aliveScale = 0.15 + 0.85 * aliveRatio;
 
-  return (timeComponent + levelComponent + playerComponent + relicComponent) * aliveScale;
+  return (base + levelComponent + playerComponent + relicComponent) * aliveScale;
 }
 
 function findOrCreateRoom(preferCode?: string): Room {

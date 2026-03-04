@@ -1195,7 +1195,7 @@ export class Game {
     if (this.isMultiplayer && this.net.connected) {
       this.netSyncTimer -= dt;
       if (this.netSyncTimer <= 0) {
-        this.netSyncTimer = 0.1;
+        this.netSyncTimer = 0.05; // match server tick rate (50ms)
         // Build weapon sync data (only send when changed)
         const weaponData: WeaponSyncData[] = this.weapons.map(w => ({
           id: w.info.id, level: w.level, evolved: w.evolved,
