@@ -79,6 +79,15 @@ index.html               # HTML + CSS (UI 오버레이)
 | 적 사망 | 즉시 | enemy_death (HP<=0 판정 시 바로 broadcast) |
 | 점수판 | 2000ms | 팀 점수 + 리더보드 |
 
+### 파티 시스템
+- **생성**: CREATE PARTY → `connect()` → `join` → `create_party` → 서버가 4자 코드 생성 → `party_created`
+- **참가**: JOIN PARTY → `connect()` → `join` → `join_party(code)` → 서버가 멤버 추가 → `party_joined`
+- **시작**: 리더가 START → `party_start` → 서버가 방 생성 → 전체 멤버에 `party_game_start(roomCode)`
+- **게임 진입**: `party_game_start` → 캐릭터 선택 → `connectMultiplayer(partyRoomCode)` → 같은 방/팀 진입
+- 최대 4명/파티, 서버 `__partyCode` WS 속성으로 추적
+- BACK 버튼: WS 연결 해제 + 파티 변수 초기화
+- `quitToTitle()`: 파티 변수 전부 리셋 (partyRoomCode, pendingPartyAction 등)
+
 ### 연결 흐름
 1. WS_URL 연결 (dev: `ws://localhost:8080/ws`, prod: `wss://{host}/ws`)
 2. `join` → `welcome` (ID, 팀, 기존 데이터) → `startGame()` (비동기)
@@ -116,6 +125,11 @@ index.html               # HTML + CSS (UI 오버레이)
 - **타이틀 복귀**: 게임오버 화면 + 멀티 사망 오버레이에 TITLE 버튼 추가
 - **유물 시스템**: 12종 유물, 25% 확률로 레벨업 풀에 등장, 사망 시 유지
 - **i18n**: 핑 안내, 채팅 placeholder, 리스폰 오버레이 텍스트 로컬라이징 (en/ko)
+- **파티 시스템**: CREATE/JOIN/QUICK START, 4자 코드, 최대 4명, 리더만 시작 가능
+  - 멤버 리스트 실시간 동기화 (배열 기반 + updatePartyMembers)
+  - 리더 이탈 시 자동 리더 이전, 빈 파티 자동 삭제
+  - BACK 버튼: WS 연결 해제 + 파티 상태 전체 초기화
+  - 참가자: START 버튼 숨김 (리더만 표시)
 
 ## Key Constants
 
@@ -124,6 +138,7 @@ index.html               # HTML + CSS (UI 오버레이)
 - 맵: 3000x3000px (±1500), 충돌 쿨다운: 0.8초/플레이어/적
 - 보스: 120초, 웨이브: 60초, 엘리트: 8% (60초 이후)
 - maxPayload: 8KB (클라이언트→서버)
+- 파티: 최대 4명, 4자 코드 (ABCDEFGHJKLMNPQRSTUVWXYZ23456789)
 
 ### 클라이언트
 - 솔로 최대 적: 250, PvP 쿨다운: 0.8초, PvP 데미지: 50%
@@ -186,12 +201,14 @@ aliveScale = 0.15 + 0.85 * (aliveCount / totalPlayers)
 ## Protocol Summary (shared/protocol.ts)
 
 ### Client → Server
-`join`, `state` (+ relicCount), `enemy_hit`, `pvp_hit`, `chat`, `ping`, `pull_request`
+`join`, `state` (+ relicCount), `enemy_hit`, `pvp_hit`, `chat`, `ping`, `pull_request`,
+`create_party`, `join_party`, `party_start`
 
 ### Server → Client
 `welcome`, `player_join/leave`, `players_sync`, `enemies_sync`, `enemy_spawn/death`,
 `boss_spawn/update/dead`, `pvp_damage`, `team_scores`, `leaderboard`, `chat`,
-`ping_signal`, `wave_event`, `event_wave_start/end`, `blackhole_spawn/sync/despawn`
+`ping_signal`, `wave_event`, `event_wave_start/end`, `blackhole_spawn/sync/despawn`,
+`party_created`, `party_joined`, `party_member_join/leave`, `party_error`, `party_game_start`
 
 ## Deployment
 
@@ -213,19 +230,25 @@ aliveScale = 0.15 + 0.85 * (aliveCount / totalPlayers)
 - 서버 O(enemies × players) brute-force 충돌 → 공간 분할 필요
 - Boss 프로젝타일 데미지 서버측 미구현 (멀티에서 무해)
 - 이벤트 리스너 정리 부재 (Game.ts init, UI.ts)
-- NetworkManager off() 메서드 없음 (리스너 누적)
+- 파티 리더 이탈 시 나머지 멤버에게 리더 변경 미통보 (party_leader_change 이벤트 없음)
+- 파티 시작 시 멤버 준비 확인 없음 (네트워크 지연 시 레이스 컨디션)
+- welcome 핸들러가 파티 설정 중에도 showRoomInfo/showMultiplayerUI 호출 (cosmetic)
 - 테스트 파일 0건
 
 ## Recently Fixed
 
+- **파티 참가 미작동**: `onPartyJoin`이 party code를 `roomCode`로 잘못 전달 → `join_party` 메시지 미전송. connect 후 `sendJoinParty(code)` 전송으로 수정
+- **파티 코드 변경**: `net.on('connected')` 핸들러 누적 → 재연결 시 `sendCreateParty()` 중복 호출. `pendingPartyAction` 상태 기반 단일 핸들러로 통합
+- **멤버 리스트 미표시**: DOM ID 오류 (`party-members` → `party-members-list`) + `appendChild` 비일관. 배열 기반 `partyMembers[]` + `updatePartyMembers()` 통일
+- **참가자 화면 미전환**: `join_party` 미전송 → `party.members`에 미등록 → `party_game_start` 미수신. 위 수정으로 해결
+- **onPartyStart 레이스 컨디션**: 서버 응답 전 UI 전환 제거, `party_game_start` 핸들러에서만 전환
+- **quitToTitle 파티 변수 미초기화**: partyRoomCode, pendingPartyAction 등 리셋 추가
+- **BACK 버튼 미정리**: WS 연결 해제 + 파티 변수 초기화 콜백 (`onPartyBack`) 추가
+- **참가자 START 버튼**: 조이너에게 START 버튼 숨김 (리더만 표시)
 - **유물 speedMultiplier 미적용**: `basePlayerSpeed` 추가, 매 프레임 적용
 - **리스폰 시 유물 효과 미재적용**: glass cannon maxHp, magnet bonus 등 리스폰 후 재적용
 - **핑 안내 로컬라이징**: 하드코딩 영문 → i18n 키 (`ping.hint`, `chat.placeholder` 등)
 - **핑/채팅 위치 겹침**: bottom 140px vs 160px로 분리
 - **멀티 난이도 시간 의존**: 시간 요소 완전 제거, 플레이어 상태만 반영
-- **유물 확률 과다**: 풀에 2개 항상 포함 → 25% 확률로 1개만
 - **동기화 지연**: 100ms → 16ms (60Hz 매 틱), 클라이언트도 16ms
-- **몬스터 초기화**: stale cleanup 2s→4s, maxPayload 4KB→8KB
 - **메인화면 복귀**: 게임오버 + 사망 오버레이에 TITLE 버튼 추가
-- **사망 시 잔상**: stale 적 자동 제거 (4초 미응답)
-- **난이도 스케일링**: 순수 플레이어 기반 + 유물 반영 + 사망 시 적 감축

@@ -58,6 +58,7 @@ export class UI {
   private onPartyJoinCallback: ((code: string) => void) | null = null;
   private onPartyQuickCallback: (() => void) | null = null;
   private onPartyStartCallback: (() => void) | null = null;
+  private onPartyBackCallback: (() => void) | null = null;
 
   private selectedCharacterId = 'warrior';
 
@@ -195,6 +196,7 @@ export class UI {
       if (this.onPartyStartCallback) this.onPartyStartCallback();
     });
     document.getElementById('party-back-btn')!.addEventListener('click', () => {
+      if (this.onPartyBackCallback) this.onPartyBackCallback();
       this.hideParty();
       this.showTitle();
     });
@@ -246,6 +248,7 @@ export class UI {
   onPartyJoin(cb: (code: string) => void): void { this.onPartyJoinCallback = cb; }
   onPartyQuick(cb: () => void): void { this.onPartyQuickCallback = cb; }
   onPartyStart(cb: () => void): void { this.onPartyStartCallback = cb; }
+  onPartyBack(cb: () => void): void { this.onPartyBackCallback = cb; }
 
   showTitle(): void {
     this.titleScreen.style.display = 'flex';

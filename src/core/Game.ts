@@ -422,6 +422,13 @@ export class Game {
       this.net.sendPartyStart();
       // UI transition handled by party_game_start event handler
     });
+    this.ui.onPartyBack(() => {
+      this.net.disconnect();
+      this.partyRoomCode = '';
+      this.pendingPartyAction = '';
+      this.pendingPartyCode = '';
+      this.partyMembers = [];
+    });
 
     // Quit to title from death overlay (multiplayer)
     document.getElementById('quit-death-btn')!.addEventListener('click', () => {
@@ -969,6 +976,11 @@ export class Game {
     this.sound.stopBGM();
     this.saveHighscore();
     this.net.disconnect();
+    // Reset party state
+    this.partyRoomCode = '';
+    this.pendingPartyAction = '';
+    this.pendingPartyCode = '';
+    this.partyMembers = [];
     for (const rp of this.remotePlayers.values()) {
       this.world.removeChild(rp.container);
       rp.destroy();
