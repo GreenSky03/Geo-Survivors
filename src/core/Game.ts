@@ -400,17 +400,17 @@ export class Game {
       this.ui.showConnectionStatus('Creating party...');
       this.pendingMultiStart = false;
       this.isMultiplayer = true;
+      this.pendingPartyAction = 'create';
       this.net.connect(WS_URL, this.playerName);
-      this.net.on('connected', () => {
-        this.net.sendCreateParty();
-      });
     });
     this.ui.onPartyJoin((code: string) => {
       this.sound.playButtonClick();
       this.ui.showConnectionStatus('Joining party...');
       this.pendingMultiStart = false;
       this.isMultiplayer = true;
-      this.net.connect(WS_URL, this.playerName, code);
+      this.pendingPartyAction = 'join';
+      this.pendingPartyCode = code;
+      this.net.connect(WS_URL, this.playerName);
     });
     this.ui.onPartyQuick(() => {
       this.sound.playButtonClick();
@@ -420,8 +420,7 @@ export class Game {
     this.ui.onPartyStart(() => {
       this.sound.playButtonClick();
       this.net.sendPartyStart();
-      this.ui.hideParty();
-      this.ui.showCharacterSelect(this.meta);
+      // UI transition handled by party_game_start event handler
     });
 
     // Quit to title from death overlay (multiplayer)
@@ -519,6 +518,9 @@ export class Game {
   }
 
   private partyRoomCode = '';
+  private pendingPartyAction: '' | 'create' | 'join' = '';
+  private pendingPartyCode = '';
+  private partyMembers: string[] = [];
 
   private connectMultiplayer(): void {
     this.net.connect(WS_URL, this.playerName, this.partyRoomCode || undefined);
@@ -824,33 +826,29 @@ export class Game {
     this.net.on('party_created', (data) => {
       this.ui.hideConnectionStatus();
       this.ui.showPartyCode(data.code);
+      this.partyMembers = [this.playerName];
+      this.ui.updatePartyMembers(this.partyMembers);
     });
 
     this.net.on('party_joined', (data) => {
       this.ui.hideConnectionStatus();
       this.ui.showPartyCode(data.code);
-      this.ui.updatePartyMembers(data.members);
+      this.partyMembers = data.members;
+      this.ui.updatePartyMembers(this.partyMembers);
+      // Joiner can't start the game — only leader can
+      document.getElementById('party-start-btn')!.style.display = 'none';
     });
 
     this.net.on('party_member_join', (data) => {
       this.sound.playButtonClick();
-      // Refresh member list from party screen
-      const memberList = document.getElementById('party-members');
-      if (memberList) {
-        const li = document.createElement('li');
-        li.textContent = data.name;
-        memberList.appendChild(li);
-      }
+      this.partyMembers.push(data.name);
+      this.ui.updatePartyMembers(this.partyMembers);
     });
 
     this.net.on('party_member_leave', (data) => {
-      // Remove member from list
-      const memberList = document.getElementById('party-members');
-      if (memberList) {
-        for (const li of Array.from(memberList.children)) {
-          if (li.textContent === data.name) { li.remove(); break; }
-        }
-      }
+      const idx = this.partyMembers.indexOf(data.name);
+      if (idx >= 0) this.partyMembers.splice(idx, 1);
+      this.ui.updatePartyMembers(this.partyMembers);
     });
 
     this.net.on('party_error', (data) => {
@@ -892,8 +890,17 @@ export class Game {
     });
 
     this.net.on('connected', () => {
-      this.ui.showConnectionStatus('Connected');
-      setTimeout(() => this.ui.hideConnectionStatus(), 2000);
+      if (this.pendingPartyAction === 'create') {
+        this.net.sendCreateParty();
+        this.pendingPartyAction = '';
+      } else if (this.pendingPartyAction === 'join') {
+        this.net.sendJoinParty(this.pendingPartyCode);
+        this.pendingPartyAction = '';
+        this.pendingPartyCode = '';
+      } else {
+        this.ui.showConnectionStatus('Connected');
+        setTimeout(() => this.ui.hideConnectionStatus(), 2000);
+      }
     });
   }
 
