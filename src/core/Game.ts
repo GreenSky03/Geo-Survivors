@@ -475,8 +475,12 @@ export class Game {
       this.sound.init();
       const nameInput = document.getElementById('name-input') as HTMLInputElement;
       this.playerName = nameInput.value.trim() || 'Player';
-      // Show character select screen instead of starting directly
-      this.ui.showCharacterSelect(this.meta);
+      // Multiplayer → party screen, Solo → character select
+      if (this.isMultiplayer) {
+        this.ui.showPartyScreen();
+      } else {
+        this.ui.showCharacterSelect(this.meta);
+      }
     });
 
     this.setupNetworkHandlers();
