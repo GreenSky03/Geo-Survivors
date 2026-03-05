@@ -61,6 +61,7 @@ export class NetworkManager {
   private serverUrl = '';
   private playerName = '';
   private roomCodePref = '';
+  private lobbyMode = false;
   public connected = false;
   public myId = '';
   public myTeam: Team = 'blue';
@@ -69,10 +70,11 @@ export class NetworkManager {
   private lastPingTime = 0;
   private reconnectAttempts = 0;
 
-  connect(url: string, name: string, roomCode?: string): void {
+  connect(url: string, name: string, roomCode?: string, lobbyOnly?: boolean): void {
     this.serverUrl = url;
     this.playerName = name;
     this.roomCodePref = roomCode || '';
+    this.lobbyMode = lobbyOnly || false;
     this.cleanup();
 
     this.ws = new WebSocket(url);
@@ -81,7 +83,11 @@ export class NetworkManager {
       this.connected = true;
       this.reconnectAttempts = 0;
       this.lastPingTime = performance.now();
-      this.send({ type: 'join', name, roomCode });
+      if (this.lobbyMode) {
+        this.send({ type: 'join', name, lobby: true });
+      } else {
+        this.send({ type: 'join', name, roomCode });
+      }
       this.emit('connected', undefined);
     };
 
@@ -95,6 +101,7 @@ export class NetworkManager {
     this.ws.onclose = () => {
       this.connected = false;
       this.emit('disconnected', undefined);
+      if (this.lobbyMode) return; // Don't auto-reconnect in lobby mode
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
       this.reconnectTimer = window.setTimeout(() => {
@@ -202,6 +209,13 @@ export class NetworkManager {
 
   sendChat(msg: string): void {
     this.send({ type: 'chat', msg });
+  }
+
+  /** Transition from lobby to game room on existing WS */
+  joinGame(roomCode?: string): void {
+    this.lobbyMode = false;
+    this.roomCodePref = roomCode || '';
+    this.send({ type: 'join', name: this.playerName, roomCode });
   }
 
   sendCreateParty(): void {

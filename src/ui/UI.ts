@@ -219,6 +219,22 @@ export class UI {
     const achBtn = document.getElementById('ach-btn');
     if (achBtn) achBtn.textContent = t('ach.btn');
 
+    // Party screen
+    const partyCreateBtn = document.getElementById('party-create-btn');
+    if (partyCreateBtn) partyCreateBtn.textContent = t('party.create');
+    const partyJoinBtn = document.getElementById('party-join-btn');
+    if (partyJoinBtn) partyJoinBtn.textContent = t('party.join');
+    const partyQuickBtn = document.getElementById('party-quick-btn');
+    if (partyQuickBtn) partyQuickBtn.textContent = t('party.quick');
+    const partyStartBtn = document.getElementById('party-start-btn');
+    if (partyStartBtn) partyStartBtn.textContent = t('party.start');
+    const partyCopyBtn = document.getElementById('party-copy-btn');
+    if (partyCopyBtn) partyCopyBtn.textContent = t('party.copy');
+    const partyBackBtn = document.getElementById('party-back-btn');
+    if (partyBackBtn) partyBackBtn.textContent = t('party.back');
+    const partyCodeInput = document.getElementById('party-code-input') as HTMLInputElement | null;
+    if (partyCodeInput) partyCodeInput.placeholder = t('party.enter_code');
+
     // Highlight active lang button
     const langBtns = document.querySelectorAll('.lang-btn');
     langBtns.forEach(btn => {

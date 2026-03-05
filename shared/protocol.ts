@@ -49,6 +49,7 @@ export interface C2S_Join {
   type: 'join';
   name: string;
   roomCode?: string;
+  lobby?: boolean;
 }
 
 export interface C2S_State {

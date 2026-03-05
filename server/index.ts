@@ -1290,6 +1290,16 @@ wss.on('connection', (ws: WebSocket) => {
           broadcast(playerRoom, { type: 'player_leave', id: playerId });
         }
         playerId = generateId();
+
+        // Lobby mode: establish identity for party operations without joining a room
+        if (msg.lobby) {
+          const pName = (typeof msg.name === 'string' ? msg.name.slice(0, 20).replace(/[<>&"']/g, '') : '') || `Player_${playerId.slice(0, 4)}`;
+          (ws as any).__lobbyName = pName;
+          playerRoom = null;
+          console.log(`[lobby] ${pName} connected (${playerId.slice(0, 6)})`);
+          break;
+        }
+
         // Check if player is in a party and should be assigned to a specific room/team
         let partyTeam: Team | null = null;
         let partyRoomCode: string | undefined = msg.roomCode;
@@ -1519,8 +1529,8 @@ wss.on('connection', (ws: WebSocket) => {
           members: new Map(),
           team: 'blue',
         };
-        // Get name from existing room player data
-        const pName = playerRoom?.players.get(playerId)?.data.name || 'Player';
+        // Get name from room player data or lobby
+        const pName = playerRoom?.players.get(playerId)?.data.name || (ws as any).__lobbyName || 'Player';
         party.members.set(playerId, { ws, name: pName });
         parties.set(code, party);
         // Store party code on player for lookup
@@ -1542,7 +1552,7 @@ wss.on('connection', (ws: WebSocket) => {
           send(ws, { type: 'party_error', reason: 'Party is full' } as S2C_PartyError);
           break;
         }
-        const pName = playerRoom?.players.get(playerId)?.data.name || 'Player';
+        const pName = playerRoom?.players.get(playerId)?.data.name || (ws as any).__lobbyName || 'Player';
         party.members.set(playerId, { ws, name: pName });
         (ws as any).__partyCode = partyCode;
         // Notify joiner

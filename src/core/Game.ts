@@ -401,7 +401,7 @@ export class Game {
       this.pendingMultiStart = false;
       this.isMultiplayer = true;
       this.pendingPartyAction = 'create';
-      this.net.connect(WS_URL, this.playerName);
+      this.net.connect(WS_URL, this.playerName, undefined, true); // lobby mode
     });
     this.ui.onPartyJoin((code: string) => {
       this.sound.playButtonClick();
@@ -410,11 +410,13 @@ export class Game {
       this.isMultiplayer = true;
       this.pendingPartyAction = 'join';
       this.pendingPartyCode = code;
-      this.net.connect(WS_URL, this.playerName);
+      this.net.connect(WS_URL, this.playerName, undefined, true); // lobby mode
     });
     this.ui.onPartyQuick(() => {
       this.sound.playButtonClick();
       this.isMultiplayer = true;
+      this.net.disconnect(); // clean up any lobby connection
+      this.ui.hideParty();
       this.ui.showCharacterSelect(this.meta);
     });
     this.ui.onPartyStart(() => {
@@ -530,7 +532,12 @@ export class Game {
   private partyMembers: string[] = [];
 
   private connectMultiplayer(): void {
-    this.net.connect(WS_URL, this.playerName, this.partyRoomCode || undefined);
+    if (this.partyRoomCode && this.net.connected) {
+      // Reuse lobby WS — keeps __partyCode for correct team assignment
+      this.net.joinGame(this.partyRoomCode);
+    } else {
+      this.net.connect(WS_URL, this.playerName, this.partyRoomCode || undefined);
+    }
   }
 
   private setupNetworkHandlers(): void {
