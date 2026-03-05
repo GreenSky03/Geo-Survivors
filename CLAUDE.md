@@ -80,13 +80,14 @@ index.html               # HTML + CSS (UI 오버레이)
 | 점수판 | 2000ms | 팀 점수 + 리더보드 |
 
 ### 파티 시스템
-- **생성**: CREATE PARTY → `connect()` → `join` → `create_party` → 서버가 4자 코드 생성 → `party_created`
-- **참가**: JOIN PARTY → `connect()` → `join` → `join_party(code)` → 서버가 멤버 추가 → `party_joined`
+- **로비 모드**: 파티 셋업 중에는 `join(lobby:true)` → 서버가 playerId만 생성, 방 미입장 (welcome 미전송)
+- **생성**: CREATE PARTY → `connect(lobbyOnly)` → `join(lobby)` → `create_party` → 서버가 4자 코드 생성 → `party_created`
+- **참가**: JOIN PARTY → `connect(lobbyOnly)` → `join(lobby)` → `join_party(code)` → 서버가 멤버 추가 → `party_joined`
 - **시작**: 리더가 START → `party_start` → 서버가 방 생성 → 전체 멤버에 `party_game_start(roomCode)`
-- **게임 진입**: `party_game_start` → 캐릭터 선택 → `connectMultiplayer(partyRoomCode)` → 같은 방/팀 진입
-- 최대 4명/파티, 서버 `__partyCode` WS 속성으로 추적
+- **게임 진입**: `party_game_start` → 캐릭터 선택 → `joinGame(roomCode)` (기존 로비 WS 재사용) → `__partyCode`로 팀 강제 배정
+- 최대 4명/파티, 서버 `__partyCode` + `__lobbyName` WS 속성으로 추적
 - BACK 버튼: WS 연결 해제 + 파티 변수 초기화
-- `quitToTitle()`: 파티 변수 전부 리셋 (partyRoomCode, pendingPartyAction 등)
+- `quitToTitle()`: 파티 변수 전부 리셋
 
 ### 연결 흐름
 1. WS_URL 연결 (dev: `ws://localhost:8080/ws`, prod: `wss://{host}/ws`)
@@ -232,15 +233,18 @@ aliveScale = 0.15 + 0.85 * (aliveCount / totalPlayers)
 - 이벤트 리스너 정리 부재 (Game.ts init, UI.ts)
 - 파티 리더 이탈 시 나머지 멤버에게 리더 변경 미통보 (party_leader_change 이벤트 없음)
 - 파티 시작 시 멤버 준비 확인 없음 (네트워크 지연 시 레이스 컨디션)
-- welcome 핸들러가 파티 설정 중에도 showRoomInfo/showMultiplayerUI 호출 (cosmetic)
+- welcome 핸들러가 파티 설정 중에도 showRoomInfo/showMultiplayerUI 호출 (lobby 모드에서는 welcome 미수신으로 해결)
 - 테스트 파일 0건
 
 ## Recently Fixed
 
-- **파티 참가 미작동**: `onPartyJoin`이 party code를 `roomCode`로 잘못 전달 → `join_party` 메시지 미전송. connect 후 `sendJoinParty(code)` 전송으로 수정
-- **파티 코드 변경**: `net.on('connected')` 핸들러 누적 → 재연결 시 `sendCreateParty()` 중복 호출. `pendingPartyAction` 상태 기반 단일 핸들러로 통합
-- **멤버 리스트 미표시**: DOM ID 오류 (`party-members` → `party-members-list`) + `appendChild` 비일관. 배열 기반 `partyMembers[]` + `updatePartyMembers()` 통일
-- **참가자 화면 미전환**: `join_party` 미전송 → `party.members`에 미등록 → `party_game_start` 미수신. 위 수정으로 해결
+- **파티 로비 모드**: `join(lobby:true)` 추가 — 파티 셋업 중 방 미입장, welcome 미전송 (적/유령 플레이어 방지)
+- **파티 WS 재사용**: `joinGame()` 메서드로 lobby WS → 게임 방 전환 (`__partyCode` 유지 → forcedTeam 적용)
+- **파티 참가 미작동**: `onPartyJoin`이 `join_party` 미전송 → lobby+`sendJoinParty(code)` 전송으로 수정
+- **파티 코드 변경**: `connected` 핸들러 누적 → `pendingPartyAction` 상태 기반 단일 핸들러로 통합
+- **멤버 리스트 미표시**: DOM ID 오류 + 배열 기반 `partyMembers[]` + `updatePartyMembers()` 통일
+- **파티 화면 i18n**: `applyLang()`에 파티 버튼/입력 필드 7개 로컬라이징 추가
+- **Quick Start UI 겹침**: `hideParty()` + lobby WS disconnect 추가
 - **onPartyStart 레이스 컨디션**: 서버 응답 전 UI 전환 제거, `party_game_start` 핸들러에서만 전환
 - **quitToTitle 파티 변수 미초기화**: partyRoomCode, pendingPartyAction 등 리셋 추가
 - **BACK 버튼 미정리**: WS 연결 해제 + 파티 변수 초기화 콜백 (`onPartyBack`) 추가
