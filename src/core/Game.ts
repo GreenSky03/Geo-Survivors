@@ -159,6 +159,9 @@ export class Game {
   // Relic system (run-scoped)
   private relicSystem = new RelicSystem();
 
+  // End-of-game record save guard (idempotent)
+  private endOfGameSaved = false;
+
   // Combo system
   private comboCount = 0;
   private comboTimer = 0;
@@ -496,17 +499,21 @@ export class Game {
     this.app.ticker.add((ticker) => {
       if (!this.started) return;
       const dt = ticker.deltaMS / 1000;
-      if (!this.paused && this.gameActive) {
-        this.update(dt);
-      }
-      // Continue animating after death (particles, shake, damage numbers)
-      if (!this.gameActive && this.particles) {
-        this.particles.update(dt);
-        this.damageNumbers.update(dt);
-        this.screenShake.update(dt, this.world);
-      }
-      for (const rp of this.remotePlayers.values()) {
-        rp.update(dt);
+      try {
+        if (!this.paused && this.gameActive) {
+          this.update(dt);
+        }
+        // Continue animating after death (particles, shake, damage numbers)
+        if (!this.gameActive && this.particles) {
+          this.particles.update(dt);
+          this.damageNumbers.update(dt);
+          this.screenShake.update(dt, this.world);
+        }
+        for (const rp of this.remotePlayers.values()) {
+          rp.update(dt);
+        }
+      } catch (err) {
+        console.error('[Game] tick error:', err);
       }
     });
   }
@@ -981,7 +988,7 @@ export class Game {
     this.gameActive = false;
     this.started = false;
     this.sound.stopBGM();
-    this.saveHighscore();
+    this.saveEndOfGame();
     this.net.disconnect();
     // Reset party state
     this.partyRoomCode = '';
@@ -994,17 +1001,21 @@ export class Game {
     }
     this.remotePlayers.clear();
     // Cleanup enemies
-    for (const e of this.enemies) { this.world.removeChild(e.container); e.container.destroy({ children: true }); }
+    for (const e of this.enemies) {
+      if (!e.container.destroyed) { this.world.removeChild(e.container); e.container.destroy({ children: true }); }
+    }
     this.enemies = [];
     this.enemyById.clear();
     // Cleanup weapons
-    for (const w of this.weapons) { this.world.removeChild(w.container); w.destroy(); }
+    for (const w of this.weapons) {
+      if (!w.container.destroyed) { this.world.removeChild(w.container); w.destroy(); }
+    }
     this.weapons = [];
     // Cleanup boss projectiles and black holes
-    for (const proj of this.bossProjectiles) proj.container.destroy();
+    for (const proj of this.bossProjectiles) { if (!proj.container.destroyed) proj.container.destroy(); }
     this.bossProjectiles = [];
     this.bossControllers.clear();
-    for (const bh of this.blackHoles) bh.container.destroy();
+    for (const bh of this.blackHoles) { if (!bh.container.destroyed) bh.container.destroy(); }
     this.blackHoles = [];
     this.blackHoleById.clear();
     this.ui.hideAll();
@@ -1021,6 +1032,29 @@ export class Game {
       localStorage.setItem(HIGHSCORE_KEY, String(this.bestTime));
       this.ui.updateHighscore(this.bestTime);
     }
+  }
+
+  /** Idempotent end-of-game save: highscore + coins + run record. Safe to call multiple times. */
+  private saveEndOfGame(): number {
+    if (this.endOfGameSaved) return 0;
+    this.endOfGameSaved = true;
+    this.saveHighscore();
+    const coinsEarned = this.processEndOfGame();
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    this.meta.addRunRecord({
+      date: dateStr,
+      durationS: this.gameTime,
+      kills: this.kills,
+      level: this.level,
+      maxCombo: this.maxCombo,
+      totalDamage: this.totalDamage,
+      coinsEarned,
+      bossKills: this.bossKillsThisGame,
+      character: this.selectedCharacterId,
+      weaponsFinal: this.weapons.map(w => w.info.id),
+    });
+    return coinsEarned;
   }
 
   private startGame(): void {
@@ -1065,9 +1099,9 @@ export class Game {
     this.chargingEnemies.clear();
     // Boss attack / black hole reset
     this.bossControllers.clear();
-    for (const proj of this.bossProjectiles) { proj.container.destroy(); }
+    for (const proj of this.bossProjectiles) { if (!proj.container.destroyed) proj.container.destroy(); }
     this.bossProjectiles = [];
-    for (const bh of this.blackHoles) { bh.container.destroy(); }
+    for (const bh of this.blackHoles) { if (!bh.container.destroyed) bh.container.destroy(); }
     this.blackHoles = [];
     this.blackHoleById.clear();
     this.nextBlackHoleTime = 90;
@@ -1081,6 +1115,7 @@ export class Game {
 
     this.bossKillsThisGame = 0;
     this.evolutionsThisGame = 0;
+    this.endOfGameSaved = false;
     this.comboCount = 0;
     this.comboTimer = 0;
     this.maxCombo = 0;
@@ -1507,6 +1542,7 @@ export class Game {
       const baseDmg = Math.floor(weapon.currentDamage * finalDamageMultiplier);
 
       for (const enemy of hits) {
+        if (enemy.dead || enemy.container.destroyed) continue;
         const isCrit = Math.random() < mults.critChance;
         const displayDmg = isCrit ? Math.floor(baseDmg * mults.critDamage) : baseDmg;
 
@@ -1721,27 +1757,8 @@ export class Game {
       } else {
         // Solo: game over
         this.gameActive = false;
-        this.saveHighscore();
         this.sound.stopBGM();
-
-        // Process meta progression
-        const coinsEarned = this.processEndOfGame();
-
-        // Record run history
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-        this.meta.addRunRecord({
-          date: dateStr,
-          durationS: this.gameTime,
-          kills: this.kills,
-          level: this.level,
-          maxCombo: this.maxCombo,
-          totalDamage: this.totalDamage,
-          coinsEarned,
-          bossKills: this.bossKillsThisGame,
-          character: this.selectedCharacterId,
-          weaponsFinal: this.weapons.map(w => w.info.id),
-        });
+        const coinsEarned = this.saveEndOfGame();
 
         this.ui.showGameOver(
           {
